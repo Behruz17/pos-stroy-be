@@ -4,9 +4,30 @@ const productService = {
   getAll: async () => {
     const [rows] = await db.execute(`
       SELECT p.id, p.name, p.manufacturer, p.created_at, p.image, p.notification_threshold, p.product_code, p.status,
-             COALESCE(s.quantity, 0) as stock_quantity
+             COALESCE(s.quantity, 0) as stock_quantity,
+             latest_sri.purchase_cost,
+             latest_sri.selling_price,
+             latest_sri.purchase_cost_converted,
+             sr.currency,
+             sr.rate
       FROM products p
       LEFT JOIN stock s ON p.id = s.product_id
+      LEFT JOIN (
+        SELECT 
+          sri1.product_id,
+          sri1.receipt_id,
+          sri1.purchase_cost,
+          sri1.selling_price,
+          sri1.purchase_cost_converted
+        FROM stock_receipt_items sri1
+        INNER JOIN (
+          SELECT product_id, MAX(id) as max_id
+          FROM stock_receipt_items 
+          WHERE status = 1
+          GROUP BY product_id
+        ) sri2 ON sri1.product_id = sri2.product_id AND sri1.id = sri2.max_id
+      ) latest_sri ON p.id = latest_sri.product_id
+      LEFT JOIN stock_receipts sr ON latest_sri.receipt_id = sr.id
       WHERE p.status = 1
       ORDER BY p.id
     `);
@@ -16,9 +37,30 @@ const productService = {
   getById: async (id) => {
     const [rows] = await db.execute(`
       SELECT p.id, p.name, p.manufacturer, p.created_at, p.image, p.notification_threshold, p.product_code, p.status,
-             COALESCE(s.quantity, 0) as stock_quantity
+             COALESCE(s.quantity, 0) as stock_quantity,
+             latest_sri.purchase_cost,
+             latest_sri.selling_price,
+             latest_sri.purchase_cost_converted,
+             sr.currency,
+             sr.rate
       FROM products p
       LEFT JOIN stock s ON p.id = s.product_id
+      LEFT JOIN (
+        SELECT 
+          sri1.product_id,
+          sri1.receipt_id,
+          sri1.purchase_cost,
+          sri1.selling_price,
+          sri1.purchase_cost_converted
+        FROM stock_receipt_items sri1
+        INNER JOIN (
+          SELECT product_id, MAX(id) as max_id
+          FROM stock_receipt_items 
+          WHERE status = 1
+          GROUP BY product_id
+        ) sri2 ON sri1.product_id = sri2.product_id AND sri1.id = sri2.max_id
+      ) latest_sri ON p.id = latest_sri.product_id
+      LEFT JOIN stock_receipts sr ON latest_sri.receipt_id = sr.id
       WHERE p.id = ? AND p.status = 1`,
       [id]
     );

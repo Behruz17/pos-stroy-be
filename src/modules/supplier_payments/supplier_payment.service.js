@@ -1,4 +1,5 @@
 const db = require('../../config/db');
+const accountsService = require('../accounts/accounts.service');
 
 const supplierPaymentService = {
   getAll: async () => {
@@ -12,7 +13,7 @@ const supplierPaymentService = {
     return rows;
   },
 
-  create: async ({ supplier_id, sum, created_by }) => {
+  create: async ({ supplier_id, account_id, sum, created_by }) => {
     const connection = await db.getConnection();
 
     try {
@@ -33,8 +34,8 @@ const supplierPaymentService = {
 
       // Create payment record
       const [result] = await connection.execute(
-        'INSERT INTO supplier_operations (supplier_id, sum, type, status) VALUES (?, ?, ?, ?)',
-        [supplier_id, sum, 'PAYMENT', 1]
+        'INSERT INTO supplier_operations (supplier_id, account_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
+        [supplier_id, account_id, sum, 'PAYMENT', 1]
       );
 
       // Decrease supplier balance (payment reduces debt)
@@ -44,6 +45,14 @@ const supplierPaymentService = {
       );
 
       await connection.commit();
+      
+      // Create transaction for supplier payment
+      await accountsService.createSupplierPaymentTransaction({
+        id: result.insertId,
+        amount: sum,
+        account_id
+      });
+      
       return { id: result.insertId, supplier_id, sum: sum.toString(), type: 'PAYMENT' };
     } catch (error) {
       await connection.rollback();

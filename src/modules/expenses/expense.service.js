@@ -1,4 +1,5 @@
 const db = require('../../config/db');
+const accountsService = require('../accounts/accounts.service');
 
 const expenseService = {
   getAll: async (filters = {}) => {
@@ -49,7 +50,7 @@ const expenseService = {
     return rows[0];
   },
 
-  create: async ({ description, amount, expense_date, created_by }) => {
+  create: async ({ description, account_id, amount, expense_date, created_by }) => {
     const connection = await db.getConnection();
 
     try {
@@ -60,11 +61,19 @@ const expenseService = {
       }
 
       const [result] = await connection.execute(
-        'INSERT INTO expenses (description, amount, expense_date, created_by, status) VALUES (?, ?, ?, ?, ?)',
-        [description, amount, expense_date, created_by, 1]
+        'INSERT INTO expenses (description, account_id, amount, expense_date, created_by, status) VALUES (?, ?, ?, ?, ?, ?)',
+        [description, account_id, amount, expense_date, created_by, 1]
       );
 
       await connection.commit();
+      
+      // Create transaction for expense
+      await accountsService.createExpenseTransaction({
+        id: result.insertId,
+        amount,
+        account_id
+      });
+      
       return { 
         id: result.insertId, 
         description, 

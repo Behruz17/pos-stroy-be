@@ -418,10 +418,23 @@ Authorization: Bearer <token>
     "image": "https://example.com/cement.jpg",
     "notification_threshold": 50,
     "stock_quantity": 150,
+    "purchase_cost": 45.00,
+    "selling_price": 65.00,
+    "purchase_cost_converted": null,
+    "currency": "TJS",
+    "rate": "1.0000",
     "created_at": "2026-04-04T18:00:00.000Z"
   }
 ]
 ```
+
+**Notes:**
+- `purchase_cost` - Последняя цена покупки из последнего прихода
+- `selling_price` - Последняя цена продажи из последнего прихода
+- `purchase_cost_converted` - Сконвертированная цена покупки в TJS (null для TJS)
+- `currency` - Валюта последнего прихода (TJS, USD, RUB)
+- `rate` - Курс валюты по отношению к TJS
+- Если у товара нет приходов, поля цен, валюты и курса будут null
 
 ---
 
@@ -444,9 +457,22 @@ Authorization: Bearer <token>
   "image": "https://example.com/cement.jpg",
   "notification_threshold": 50,
   "stock_quantity": 150,
+  "purchase_cost": 45.00,
+  "selling_price": 65.00,
+  "purchase_cost_converted": null,
+  "currency": "TJS",
+  "rate": "1.0000",
   "created_at": "2026-04-04T18:00:00.000Z"
 }
 ```
+
+**Notes:**
+- `purchase_cost` - Последняя цена покупки из последнего прихода
+- `selling_price` - Последняя цена продажи из последнего прихода
+- `purchase_cost_converted` - Сконвертированная цена покупки в TJS (null для TJS)
+- `currency` - Валюта последнего прихода (TJS, USD, RUB)
+- `rate` - Курс валюты по отношению к TJS
+- Если у товара нет приходов, поля цен, валюты и курса будут null
 
 **Errors:**
 - `404` — Товар не найден
@@ -749,7 +775,10 @@ GET /api/stock-receipts?year=2026
     "created_at": "2026-04-05T08:00:00.000Z",
     "total_amount": 5000.00,
     "supplier_id": 2,
-    "supplier_name": "Supplier Name"
+    "supplier_name": "Supplier Name",
+    "currency": "TJS",
+    "rate": "1.0000",
+    "total_amount_converted": null
   }
 ]
 ```
@@ -774,6 +803,9 @@ Authorization: Bearer <token>
   "total_amount": 5000.00,
   "supplier_id": 2,
   "supplier_name": "Supplier Name",
+  "currency": "TJS",
+  "rate": "1.0000",
+  "total_amount_converted": null,
   "items": [
     {
       "id": 1,
@@ -783,7 +815,8 @@ Authorization: Bearer <token>
       "product_code": "CEM-500",
       "quantity": 100,
       "purchase_cost": 50.00,
-      "selling_price": 75.00
+      "selling_price": 75.00,
+      "purchase_cost_converted": null
     }
   ]
 }
@@ -807,6 +840,8 @@ Authorization: Bearer <token>
 ```json
 {
   "supplier_id": 2,
+  "currency": "USD",
+  "rate": 10.5000,
   "items": [
     {
       "product_id": 5,
@@ -823,6 +858,12 @@ Authorization: Bearer <token>
   ]
 }
 ```
+
+**Notes:**
+- `currency` - Валюта прихода (TJS, USD, RUB). По умолчанию TJS
+- `rate` - Курс конвертации к TJS. По умолчанию 1.0000
+- `total_amount_converted` - Сконвертированная сумма в TJS (null для TJS)
+- `purchase_cost_converted` - Сконвертированная закупочная цена в TJS (null для TJS)
 
 **Response (201):**
 ```json
@@ -1252,6 +1293,429 @@ Authorization: Bearer <token>
 
 ---
 
+## Overdue Sales Endpoints
+
+### GET `/overdue-sales`
+
+Получение списка всех продаж в долг с истекшим дедлайном.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+[
+  {
+    "id": 1,
+    "customer_id": 2,
+    "total_amount": 500.00,
+    "payment_status": "DEBT",
+    "debt_deadline": "2026-04-10T23:59:59.000Z",
+    "customer_name": "Иванов Иван Иванович",
+    "created_at": "2026-04-05T10:00:00.000Z"
+  }
+]
+```
+
+**Notes:**
+- Возвращает только продажи со статусом DEBT
+- Только продажи с установленным и истекшим debt_deadline
+- Сортировка по возрастанию дедлайна (самые просроченные первые)
+
+---
+
+### GET `/overdue-sales/summary`
+
+Получение сводной информации по просроченным долгам.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "total_overdue_sales": 15,
+  "total_overdue_amount": 12500.00,
+  "customers_with_debt": 8,
+  "avg_days_overdue": 12.5
+}
+```
+
+**Notes:**
+- `total_overdue_sales` - общее количество просроченных продаж
+- `total_overdue_amount` - общая сумма просроченных долгов
+- `customers_with_debt` - количество клиентов с просроченными долгами
+- `avg_days_overdue` - среднее количество дней просрочки
+
+---
+
+### GET `/overdue-sales/by-customer`
+
+Получение списка просроченных долгов с группировкой по клиентам.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+[
+  {
+    "customer_id": 2,
+    "customer_name": "Иванов Иван Иванович",
+    "phone": "+992987654321",
+    "overdue_sales_count": 3,
+    "total_overdue_amount": 1500.00,
+    "earliest_deadline": "2026-04-08T23:59:59.000Z",
+    "latest_deadline": "2026-04-15T23:59:59.000Z",
+    "avg_days_overdue": 8.5
+  }
+]
+```
+
+**Notes:**
+- Сортировка по убыванию общей суммы долга
+- Показывает детальную информацию по каждому клиенту
+
+---
+
+### GET `/overdue-sales/:id`
+
+Получение просроченной продажи по ID с товарами.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "customer_id": 2,
+  "total_amount": 500.00,
+  "payment_status": "DEBT",
+  "debt_deadline": "2026-04-10T23:59:59.000Z",
+  "customer_name": "Иванов Иван Иванович",
+  "created_at": "2026-04-05T10:00:00.000Z",
+  "items": [
+    {
+      "id": 1,
+      "product_id": 5,
+      "product_name": "Цемент М500",
+      "quantity": 10,
+      "unit_price": 50.00,
+      "unit_value": 1.0,
+      "total_price": 500.00
+    }
+  ]
+}
+```
+
+**Errors:**
+- `404` — Просроченная продажа не найдена
+
+---
+
+## Salaries Endpoints
+
+### POST `/salaries`
+
+Creating salary for user.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "user_id": 5,
+  "month": 4,
+  "year": 2026,
+  "total_amount": 5000.00
+}
+```
+
+**Response (201):**
+```json
+{
+  "id": 1
+}
+```
+
+**Errors:**
+- `400` - user_id, month, year, total_amount are required
+- `400` - Salary already exists for this user, month, and year
+- `400` - Month must be between 1 and 12
+- `400` - Year must be between 2000 and 2100
+- `400` - Amount must be positive
+
+---
+
+### POST `/salaries/payments`
+
+Creating payment for salary.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "salary_id": 1,
+  "account_id": 1,
+  "amount": 1500.00,
+  "payment_date": "2026-04-15T10:00:00.000Z"
+}
+```
+
+**Notes:**
+- `account_id` - ID счета (1=Наличные, 2=Банковская карта, опционально)
+- По умолчанию используется счет 1 (Наличные)
+
+**Response (201):**
+```json
+{
+  "id": 3
+}
+```
+
+**Errors:**
+- `400` - salary_id, amount, payment_date are required
+- `400` - Salary not found
+- `400` - Payment amount must be positive
+
+---
+
+### GET `/salaries/users-history`
+
+Getting list of users with payment history and remaining amounts.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+[
+  {
+    "user_id": 5,
+    "user_name": "Behruz",
+    "login": "admin",
+    "total_remaining": 3000.00,
+    "salaries": [
+      {
+        "salary_id": 8,
+        "month": 4,
+        "year": 2026,
+        "total_amount": 5000.00,
+        "paid_amount": 2000.00,
+        "remaining_amount": 3000.00,
+        "created_at": "2026-04-01T09:00:00.000Z",
+        "payments": [
+          {
+            "id": 15,
+            "amount": 2000.00,
+            "payment_date": "2026-04-10T10:00:00.000Z",
+            "created_by_name": "Behruz",
+            "created_at": "2026-04-10T10:00:00.000Z"
+          }
+        ]
+      },
+      {
+        "salary_id": 7,
+        "month": 3,
+        "year": 2026,
+        "total_amount": 3000.00,
+        "paid_amount": 3000.00,
+        "remaining_amount": 0.00,
+        "created_at": "2026-03-01T09:00:00.000Z",
+        "payments": [
+          {
+            "id": 14,
+            "amount": 3000.00,
+            "payment_date": "2026-03-15T10:00:00.000Z",
+            "created_by_name": "Behruz",
+            "created_at": "2026-03-15T10:00:00.000Z"
+          }
+        ]
+      }
+    ]
+  }
+]
+```
+
+**Notes:**
+- Shows all users with salaries
+- `total_remaining` - total debt amount for user
+- `salaries` - array of salaries with payment history
+- `remaining_amount` - remaining amount for specific salary
+- Users sorted by name
+
+---
+
+## Accounts Endpoints
+
+### GET `/accounts`
+
+Получение списка всех счетов с текущими балансами и последними транзакциями.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+[
+  {
+    "id": 1,
+    "name": "Наличные",
+    "type": "CASH",
+    "initial_balance": 10000.00,
+    "transaction_balance": 2500.00,
+    "current_balance": 12500.00,
+    "status": 1,
+    "created_at": "2026-04-01T09:00:00.000Z",
+    "updated_at": "2026-04-15T14:30:00.000Z",
+    "recent_transactions": [
+      {
+        "id": 15,
+        "type": "INCOME",
+        "amount": 500.00,
+        "reference_type": "SALE",
+        "reference_id": 25,
+        "description": "Продажа #25",
+        "created_at": "2026-04-15T10:00:00.000Z"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "Банковская карта",
+    "type": "ELECTRONIC",
+    "initial_balance": 5000.00,
+    "transaction_balance": -1500.00,
+    "current_balance": 3500.00,
+    "status": 1,
+    "created_at": "2026-04-01T09:00:00.000Z",
+    "updated_at": "2026-04-15T14:30:00.000Z",
+    "recent_transactions": []
+  }
+]
+```
+
+**Notes:**
+- `initial_balance` - начальный баланс счета
+- `transaction_balance` - баланс от транзакций (income - expense)
+- `current_balance` - текущий баланс (initial + transaction_balance)
+- `recent_transactions` - последние 10 транзакций
+- Сортировка по типу и имени счета
+
+---
+
+### GET `/accounts/:id`
+
+Получение детальной информации о счете со всеми транзакциями.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "name": "Наличные",
+  "type": "CASH",
+  "initial_balance": 10000.00,
+  "transaction_balance": 2500.00,
+  "current_balance": 12500.00,
+  "status": 1,
+  "created_at": "2026-04-01T09:00:00.000Z",
+  "updated_at": "2026-04-15T14:30:00.000Z",
+  "transactions": [
+    {
+      "id": 15,
+      "type": "INCOME",
+      "amount": 500.00,
+      "reference_type": "SALE",
+      "reference_id": 25,
+      "description": "Продажа #25",
+      "created_at": "2026-04-15T10:00:00.000Z"
+    },
+    {
+      "id": 14,
+      "type": "EXPENSE",
+      "amount": 1000.00,
+      "reference_type": "SALARY",
+      "reference_id": 8,
+      "description": "Выплата зарплаты #8",
+      "created_at": "2026-04-10T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Errors:**
+- `404` — Счет не найден
+
+---
+
+### POST `/accounts/transactions`
+
+Создание новой транзакции.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "account_id": 1,
+  "type": "INCOME",
+  "amount": 500.00,
+  "reference_type": "SALE",
+  "reference_id": 25,
+  "description": "Продажа #25"
+}
+```
+
+**Response (201):**
+```json
+{
+  "id": 16
+}
+```
+
+**Errors:**
+- `400` — account_id, type, и amount обязательны
+- `400` — Сумма должна быть положительной
+- `400` — Недопустимый тип транзакции
+- `400` — Недопустимый тип ссылки
+- `400` — Счет не найден
+
+**Notes:**
+- `type`: INCOME, EXPENSE, TRANSFER
+- `reference_type`: SALE, PURCHASE, SALARY, EXPENSE, CUSTOMER_PAYMENT, SUPPLIER_PAYMENT, TRANSFER
+- `reference_id` - ID связанной записи (может быть null)
+- `description` - описание транзакции (опционально)
+
+---
+
 ## Sales Endpoints
 
 ### GET `/sales`
@@ -1298,12 +1762,18 @@ GET /api/sales?year=2026
     "customer_id": 2,
     "customer_name": "Иванов Иван",
     "total_amount": 500.00,
+    "paid_amount": 0.00,
     "payment_status": "DEBT",
+    "stage": "ordered",
     "created_by": 1,
     "created_at": "2026-04-05T10:00:00.000Z"
   }
 ]
 ```
+
+**Notes:**
+- `stage` — Этап продажи: `ordered` (заказан), `ready` (готов), `delivered` (доставлен/выдан)
+- Этапы независимы от оплаты (`payment_status`)
 
 ---
 
@@ -1323,7 +1793,10 @@ Authorization: Bearer <token>
   "customer_id": 2,
   "customer_name": "Иванов Иван",
   "total_amount": 500.00,
+  "paid_amount": 0.00,
   "payment_status": "DEBT",
+  "stage": "ordered",
+  "debt_deadline": "2026-05-15T23:59:59.000Z",
   "created_by": 1,
   "created_at": "2026-04-05T10:00:00.000Z",
   "items": [
@@ -1339,6 +1812,9 @@ Authorization: Bearer <token>
   ]
 }
 ```
+
+**Notes:**
+- `stage` — Текущий этап продажи: `ordered`, `ready`, `delivered`
 
 **Errors:**
 - `404` — Продажа не найдена
@@ -1411,15 +1887,39 @@ Authorization: Bearer <token>
 {
   "customer_id": 2,
   "payment_status": "DEBT",
+  "paid_amount": 0,
+  "stage": "ordered",
+  "account_id": 1,
+  "debt_deadline": "2026-05-15T23:59:59.000Z",
   "items": [
     {
       "product_id": 5,
+      "quantity": 3,
+      "unit_price": 50.00,
+      "unit_value": 2.5
+    },
+    {
+      "product_id": 6,
       "quantity": 10,
-      "unit_price": 50.00
+      "unit_price": 30.00
     }
   ]
 }
 ```
+
+**Notes:**
+- `account_id` - ID счета (1=Наличные, 2=Банковская карта, опционально)
+- `account_id` используется только для payment_status = "PAID"
+- По умолчанию используется счет 1 (Наличные)
+- `stage` - Этап продажи: `ordered` (по умолчанию), `ready`, `delivered`
+- `paid_amount` - Сумма частичной оплаты (только для `PARTIAL`)
+
+**Notes:**
+- `debt_deadline` - Срок погашения долга (ISO 8601 формат). Только для payment_status = "DEBT"
+- `unit_value` - Размер единицы товара (метры, вес и т.д.). По умолчанию 1.0
+- `total_price` рассчитывается как: `quantity * unit_price * unit_value`
+- Пример: 3 штуки по 50.00 каждая, размером 2.5м = 3 * 50.00 * 2.5 = 375.00
+- Если `unit_value` не указан, используется 1.0 (обратная совместимость)
 
 **Response (201):**
 ```json
@@ -1439,6 +1939,8 @@ Authorization: Bearer <token>
 **Errors:**
 - `400` — Поле items обязательно
 - `400` — Каждый item должен иметь product_id, quantity > 0 и unit_price
+- `400` — unit_value должен быть положительным числом
+- `400` — debt_deadline должен быть валидной датой
 - `400` — Недостаточно остатков на складе
 
 ---
@@ -1467,6 +1969,133 @@ Authorization: Bearer <token>
 - Удаляет запись из `sales`
 
 **Errors:**
+- `404` — Продажа не найдена
+
+---
+
+### PUT `/sales/:id/stage`
+
+Изменение этапа продажи. Поддерживает только последовательные переходы: `ordered` → `ready` → `delivered`.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "stage": "ready"
+}
+```
+
+**Notes:**
+- Допустимые этапы: `ordered`, `ready`, `delivered`
+- Разрешённые переходы:
+  - `ordered` → `ready`
+  - `ready` → `delivered`
+- ❌ Нельзя пропускать этапы (например, `ordered` → `delivered`)
+- ❌ Нельзя возвращаться назад (например, `ready` → `ordered`)
+- Этапы независимы от оплаты (`payment_status`)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "sale_id": 1,
+  "from_stage": "ordered",
+  "to_stage": "ready",
+  "message": "Stage updated successfully from 'ordered' to 'ready'"
+}
+```
+
+**Errors:**
+- `400` — Поле stage обязательно
+- `400` — Недопустимый этап
+- `400` — Недопустимый переход между этапами
+- `404` — Продажа не найдена
+
+---
+
+### GET `/sales/:id/stage-history`
+
+Получение истории изменений этапов продажи.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+[
+  {
+    "id": 2,
+    "sale_id": 1,
+    "from_stage": "ready",
+    "to_stage": "delivered",
+    "changed_by": 1,
+    "changed_by_username": "admin",
+    "created_at": "2026-04-22T15:00:00.000Z"
+  },
+  {
+    "id": 1,
+    "sale_id": 1,
+    "from_stage": "ordered",
+    "to_stage": "ready",
+    "changed_by": 1,
+    "changed_by_username": "admin",
+    "created_at": "2026-04-22T14:30:00.000Z"
+  }
+]
+```
+
+**Notes:**
+- Возвращает записи в порядке убывания даты (новые сначала)
+- `changed_by_username` — имя пользователя, который изменил этап
+
+---
+
+### POST `/sales/:id/payment`
+
+Добавление частичной оплаты к существующей продаже.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "amount": 250,
+  "account_id": 1
+}
+```
+
+**Notes:**
+- `amount` — Сумма платежа (обязательно, положительное число)
+- `account_id` — ID счета для зачисления (опционально, по умолчанию 1)
+- Автоматически обновляет `paid_amount` и `payment_status`
+- Если сумма платежей достигает `total_amount`, статус меняется на `PAID`
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "sale_id": 1,
+  "previous_paid": 250,
+  "new_paid": 500,
+  "total_amount": 1000,
+  "remaining": 500,
+  "payment_status": "PARTIAL",
+  "message": "Successfully added payment of 250. Total paid: 500, Remaining: 500"
+}
+```
+
+**Errors:**
+- `400` — Сумма платежа должна быть положительным числом
+- `400` — Сумма платежа превышает общую сумму продажи
 - `404` — Продажа не найдена
 
 ---
@@ -1629,6 +2258,292 @@ Authorization: Bearer <token>
 
 ---
 
+## Conversions Endpoints (Переработка товаров)
+
+Переработка товара — преобразование товара A в товар B с переносом себестоимости.
+
+### GET `/conversions`
+
+Получение списка всех операций переработки. Поддерживает фильтрацию по дате, месяцу и году.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `date` — Фильтр по конкретной дате (формат: `YYYY-MM-DD`)
+- `month` — Фильтр по месяцу (1-12), требует `year`
+- `year` — Фильтр по году
+
+**Response (200):**
+```json
+[
+  {
+    "id": 1,
+    "from_product_id": 5,
+    "from_product_name": "Цемент",
+    "from_product_code": "CEM-001",
+    "to_product_id": 6,
+    "to_product_name": "Цемент М500",
+    "to_product_code": "CEM-500",
+    "from_quantity": 10,
+    "to_quantity": 5,
+    "purchase_cost": 100.00,
+    "selling_price": 150.00,
+    "created_by": 1,
+    "created_by_name": "admin",
+    "created_at": "2026-04-22T15:00:00.000Z"
+  }
+]
+```
+
+**Notes:**
+- `purchase_cost` — Новая себестоимость товара B (перенесена с товара A)
+- `selling_price` — Цена продажи товара B
+
+---
+
+### GET `/conversions/:id`
+
+Получение одной операции переработки по ID.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "from_product_id": 5,
+  "from_product_name": "Цемент",
+  "from_product_code": "CEM-001",
+  "to_product_id": 6,
+  "to_product_name": "Цемент М500",
+  "to_product_code": "CEM-500",
+  "from_quantity": 10,
+  "to_quantity": 5,
+  "purchase_cost": 100.00,
+  "selling_price": 150.00,
+  "created_by": 1,
+  "created_by_name": "admin",
+  "created_at": "2026-04-22T15:00:00.000Z"
+}
+```
+
+**Errors:**
+- `404` — Переработка не найдена
+
+---
+
+### POST `/conversions`
+
+Создание операции переработки. Уменьшает остаток товара A, увеличивает остаток товара B, переносит себестоимость.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "from_product_id": 5,
+  "to_product_id": 6,
+  "from_quantity": 10,
+  "to_quantity": 5,
+  "selling_price": 150
+}
+```
+
+**Notes:**
+- `from_product_id` — ID исходного товара A (обязательно)
+- `to_product_id` — ID целевого товара B (обязательно)
+- `from_quantity` — Количество списываемого товара A (обязательно)
+- `to_quantity` — Количество приходуемого товара B (обязательно)
+- `selling_price` — Цена продажи товара B (опционально)
+
+**Логика расчёта себестоимости:**
+```
+Общая себестоимость = purchase_cost_A × from_quantity
+Новая себестоимость B = Общая себестоимость / to_quantity
+```
+
+**Пример:**
+- Цемент: себестоимость 50, количество 10
+- Цемент М500: количество 5
+- Общая себестоимость = 50 × 10 = 500
+- Новая себестоимость М500 = 500 / 5 = 100
+
+**Response (201):**
+```json
+{
+  "id": 1,
+  "message": "Product conversion created successfully"
+}
+```
+
+**Errors:**
+- `400` — Исходный и целевой товары должны быть разными
+- `400` — Количества должны быть положительными числами
+- `400` — Недостаточно остатков исходного товара
+- `404` — Товар не найден
+
+---
+
+### DELETE `/conversions/:id`
+
+Удаление операции переработки (откат). Возвращает остатки на склад.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "message": "Conversion deleted successfully"
+}
+```
+
+**Логика:**
+- Возвращает товар A на склад: `+from_quantity`
+- Списывает товар B со склада: `-to_quantity`
+- Soft delete записи — `status = 0`
+
+**⚠️ Важно:**
+- Себестоимость товара B **не восстанавливается**
+- Запись сохраняется в БД со статусом 0
+
+**Errors:**
+- `404` — Переработка не найдена
+
+---
+
+## Exchange Rates Endpoints (Валютные курсы)
+
+Управление текущими валютными курсами (USD, RUB, TJS). Просто обновляем существующий курс.
+
+### GET `/exchange-rates`
+
+Получение списка всех текущих курсов.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+[
+  {
+    "id": 1,
+    "currency": "USD",
+    "rate_to_tjs": 10.5000,
+    "created_at": "2026-04-22T09:00:00.000Z",
+    "updated_at": "2026-04-22T09:00:00.000Z"
+  },
+  {
+    "id": 2,
+    "currency": "RUB",
+    "rate_to_tjs": 0.1300,
+    "created_at": "2026-04-22T09:00:00.000Z",
+    "updated_at": "2026-04-22T09:00:00.000Z"
+  },
+  {
+    "id": 3,
+    "currency": "TJS",
+    "rate_to_tjs": 1.0000,
+    "created_at": "2026-04-22T09:00:00.000Z",
+    "updated_at": "2026-04-22T09:00:00.000Z"
+  }
+]
+```
+
+**Notes:**
+- `rate_to_tjs` — Курс валюты по отношению к TJS (сколько TJS за 1 единицу валюты)
+- TJS всегда имеет курс 1.0000
+- `updated_at` — Время последнего обновления курса
+
+---
+
+### GET `/exchange-rates/:currency`
+
+Получение курса конкретной валюты.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Example:**
+```
+GET /api/exchange-rates/USD
+```
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "currency": "USD",
+  "rate_to_tjs": 10.5000,
+  "created_at": "2026-04-22T09:00:00.000Z",
+  "updated_at": "2026-04-22T09:00:00.000Z"
+}
+```
+
+**Errors:**
+- `404` — Курс для указанной валюты не найден
+
+---
+
+### PUT `/exchange-rates`
+
+Обновление курса валюты (создаёт запись если не существует).
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "currency": "USD",
+  "rate_to_tjs": 10.5000
+}
+```
+
+**Notes:**
+- `currency` — Валюта: USD, RUB или TJS (обязательно)
+- `rate_to_tjs` — Курс к TJS (обязательно, положительное число)
+- Если валюта не существует — создаётся новая запись
+- Если валюта существует — обновляется курс
+- TJS всегда устанавливается в 1.0000
+
+**Примеры курсов:**
+- USD → TJS: 10.5000 (1 USD = 10.50 TJS)
+- RUB → TJS: 0.1300 (1 RUB = 0.13 TJS)
+- TJS → TJS: 1.0000 (всегда 1)
+
+**Response (200):**
+```json
+{
+  "currency": "USD",
+  "rate_to_tjs": 10.5000,
+  "message": "Exchange rate updated successfully"
+}
+```
+
+**Errors:**
+- `400` — Валюта должна быть одной из: USD, RUB, TJS
+- `400` — Курс должен быть положительным числом
+
+---
+
 ## Customer Payments Endpoints
 
 ### GET `/customer-payments`
@@ -1670,9 +2585,14 @@ Authorization: Bearer <token>
 ```json
 {
   "customer_id": 72,
+  "account_id": 1,
   "sum": 30.00
 }
 ```
+
+**Notes:**
+- `account_id` - ID счета (1=Наличные, 2=Банковская карта, опционально)
+- По умолчанию используется счет 1 (Наличные)
 
 **Response (201):**
 ```json
@@ -2038,10 +2958,15 @@ Authorization: Bearer <token>
 ```json
 {
   "description": "Закупка канцелярии",
+  "account_id": 1,
   "amount": 150.00,
   "expense_date": "2026-04-05"
 }
 ```
+
+**Notes:**
+- `account_id` - ID счета (1=Наличные, 2=Банковская карта, опционально)
+- По умолчанию используется счет 1 (Наличные)
 
 **Response (201):**
 ```json
@@ -2153,9 +3078,14 @@ Authorization: Bearer <token>
 ```json
 {
   "supplier_id": 2,
+  "account_id": 1,
   "sum": 500.00
 }
 ```
+
+**Notes:**
+- `account_id` - ID счета (1=Наличные, 2=Банковская карта, опционально)
+- По умолчанию используется счет 1 (Наличные)
 
 **Response (201):**
 ```json

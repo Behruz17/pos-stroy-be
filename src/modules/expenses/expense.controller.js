@@ -39,7 +39,7 @@ const expenseController = {
 
   create: async (req, res) => {
     try {
-      const { description, amount, expense_date } = req.body;
+      const { description, account_id, amount, expense_date } = req.body;
 
       if (!description || !amount || amount <= 0 || !expense_date) {
         return res.status(400).json({ 
@@ -57,6 +57,7 @@ const expenseController = {
 
       const result = await expenseService.create({
         description,
+        account_id,
         amount: parseFloat(amount),
         expense_date,
         created_by: req.user.id

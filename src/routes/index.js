@@ -14,6 +14,12 @@ const customerOperationsRoutes = require('../modules/customer_operations/custome
 const supplierOperationsRoutes = require('../modules/supplier_operations/supplier_operations.routes');
 const debtorsRoutes = require('../modules/debtors/debtors.routes');
 const debtorOperationsRoutes = require('../modules/debtor_operations/debtor_operations.routes');
+const overdueSalesRoutes = require('../modules/sales/overdue-sales.routes');
+const salariesSimpleRoutes = require('../modules/salaries/salaries-simple.routes');
+const accountsRoutes = require('../modules/accounts/accounts.routes');
+const reportsRoutes = require('../modules/reports/reports.routes');
+const conversionsRoutes = require('../modules/conversions/conversions.routes');
+const exchangeRatesRoutes = require('../modules/exchange_rates/exchange_rates.routes');
 
 const router = express.Router();
 
@@ -32,5 +38,11 @@ router.use('/customer-operations', customerOperationsRoutes);
 router.use('/supplier-operations', supplierOperationsRoutes);
 router.use('/debtors', debtorsRoutes);
 router.use('/debtor-operations', debtorOperationsRoutes);
+router.use('/overdue-sales', overdueSalesRoutes);
+router.use('/salaries', salariesSimpleRoutes);
+router.use('/accounts', accountsRoutes);
+router.use('/reports', reportsRoutes);
+router.use('/conversions', conversionsRoutes);
+router.use('/exchange-rates', exchangeRatesRoutes);
 
 module.exports = router;

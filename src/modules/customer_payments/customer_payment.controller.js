@@ -13,7 +13,7 @@ const customerPaymentController = {
 
   create: async (req, res) => {
     try {
-      const { customer_id, sum } = req.body;
+      const { customer_id, account_id, sum } = req.body;
 
       if (!customer_id || !sum || sum <= 0) {
         return res.status(400).json({ error: 'Customer ID and positive sum are required' });
@@ -21,6 +21,7 @@ const customerPaymentController = {
 
       const result = await customerPaymentService.create({
         customer_id,
+        account_id,
         sum,
         created_by: req.user.id
       });

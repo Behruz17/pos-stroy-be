@@ -13,7 +13,7 @@ const supplierPaymentController = {
 
   create: async (req, res) => {
     try {
-      const { supplier_id, sum } = req.body;
+      const { supplier_id, account_id, sum } = req.body;
 
       if (!supplier_id || !sum || sum <= 0) {
         return res.status(400).json({ error: 'Supplier and positive sum are required' });
@@ -21,6 +21,7 @@ const supplierPaymentController = {
 
       const result = await supplierPaymentService.create({
         supplier_id,
+        account_id,
         sum,
         created_by: req.user.id
       });

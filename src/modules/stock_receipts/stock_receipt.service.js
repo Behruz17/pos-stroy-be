@@ -1,4 +1,5 @@
 const db = require('../../config/db');
+const accountsService = require('../accounts/accounts.service');
 
 const stockReceiptService = {
   getAll: async ({ date, month, year } = {}) => {
@@ -55,7 +56,7 @@ const stockReceiptService = {
     return receipt;
   },
 
-  create: async ({ created_by, supplier_id, items }) => {
+  create: async ({ created_by, supplier_id, items, currency = 'TJS', rate = 1.0000 }) => {
     const connection = await db.getConnection();
 
     try {
@@ -66,27 +67,42 @@ const stockReceiptService = {
       }
 
       let totalAmount = 0;
+      let totalAmountConverted = null;
+      
       for (const item of items) {
         const itemTotal = (item.quantity || 0) * (item.purchase_cost || 0);
         totalAmount += itemTotal;
       }
+      
+      // Calculate converted amount if not TJS
+      if (currency !== 'TJS' && rate !== 1.0000) {
+        totalAmountConverted = totalAmount * rate;
+      }
 
       const [receiptResult] = await connection.execute(
-        'INSERT INTO stock_receipts (created_by, supplier_id, total_amount, status) VALUES (?, ?, ?, ?)',
-        [created_by, supplier_id || null, totalAmount, 1]
+        'INSERT INTO stock_receipts (created_by, supplier_id, total_amount, status, currency, rate, total_amount_converted) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [created_by, supplier_id || null, totalAmount, 1, currency, rate, totalAmountConverted]
       );
       const receiptId = receiptResult.insertId;
 
       for (const item of items) {
+        let purchaseCostConverted = null;
+        
+        // Calculate converted purchase cost if not TJS
+        if (currency !== 'TJS' && rate !== 1.0000 && item.purchase_cost) {
+          purchaseCostConverted = item.purchase_cost * rate;
+        }
+        
         await connection.execute(
-          'INSERT INTO stock_receipt_items (receipt_id, product_id, quantity, purchase_cost, selling_price, status) VALUES (?, ?, ?, ?, ?, ?)',
+          'INSERT INTO stock_receipt_items (receipt_id, product_id, quantity, purchase_cost, selling_price, status, purchase_cost_converted) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [
             receiptId,
             item.product_id,
             item.quantity,
             item.purchase_cost || null,
             item.selling_price || null,
-            1
+            1,
+            purchaseCostConverted
           ]
         );
 

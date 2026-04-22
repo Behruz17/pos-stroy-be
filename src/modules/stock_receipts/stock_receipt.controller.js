@@ -33,11 +33,12 @@ const stockReceiptController = {
 
   create: async (req, res) => {
     try {
-      const { supplier_id, items } = req.body;
+      const { supplier_id, items, currency = 'TJS', rate = 1.0000 } = req.body;
 
       if (!supplier_id) {
         return res.status(400).json({ error: 'Supplier is required' });
       }
+
 
       if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'Items are required' });
@@ -49,10 +50,23 @@ const stockReceiptController = {
         }
       }
 
+      // Validate currency
+      const validCurrencies = ['TJS', 'USD', 'RUB'];
+      if (!validCurrencies.includes(currency)) {
+        return res.status(400).json({ error: 'Invalid currency. Must be TJS, USD, or RUB' });
+      }
+
+      // Validate rate
+      if (typeof rate !== 'number' || rate <= 0) {
+        return res.status(400).json({ error: 'Rate must be a positive number' });
+      }
+
       const result = await stockReceiptService.create({
         created_by: req.user.id,
         supplier_id,
-        items
+        items,
+        currency,
+        rate
       });
 
       if (result.error) {
