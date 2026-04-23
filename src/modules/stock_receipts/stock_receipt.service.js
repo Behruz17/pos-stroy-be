@@ -87,12 +87,12 @@ const stockReceiptService = {
 
       for (const item of items) {
         let purchaseCostConverted = null;
-        
+
         // Calculate converted purchase cost if not TJS
         if (currency !== 'TJS' && rate !== 1.0000 && item.purchase_cost) {
           purchaseCostConverted = item.purchase_cost * rate;
         }
-        
+
         await connection.execute(
           'INSERT INTO stock_receipt_items (receipt_id, product_id, quantity, purchase_cost, selling_price, status, purchase_cost_converted) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [
@@ -106,10 +106,32 @@ const stockReceiptService = {
           ]
         );
 
-        await connection.execute(`
-          INSERT INTO stock (product_id, quantity) VALUES (?, ?)
-          ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)
-        `, [item.product_id, item.quantity]);
+        // Check product type
+        const [productRows] = await connection.execute(
+          'SELECT type FROM products WHERE id = ? AND status = 1',
+          [item.product_id]
+        );
+        const productType = productRows[0]?.type || 'simple';
+
+        if (productType === 'batch') {
+          // For batch products: create a new stock_items entry (separate batch)
+          const batchCode = item.batch_code || `BATCH-${receiptId}-${Date.now()}`;
+          await connection.execute(
+            'INSERT INTO stock_items (product_id, quantity, batch_code, purchase_cost, selling_price, receipt_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [item.product_id, item.quantity, batchCode, item.purchase_cost || null, item.selling_price || null, receiptId, 1]
+          );
+          // Update stock total (sum of all batches)
+          await connection.execute(`
+            INSERT INTO stock (product_id, quantity) VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)
+          `, [item.product_id, item.quantity]);
+        } else {
+          // For simple products: just sum the quantity
+          await connection.execute(`
+            INSERT INTO stock (product_id, quantity) VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)
+          `, [item.product_id, item.quantity]);
+        }
       }
 
       if (supplier_id) {
@@ -159,10 +181,26 @@ const stockReceiptService = {
       );
 
       for (const item of itemRows) {
+        // Check product type
+        const [productRows] = await connection.execute(
+          'SELECT type FROM products WHERE id = ? AND status = 1',
+          [item.product_id]
+        );
+        const productType = productRows[0]?.type || 'simple';
+
+        // Update stock quantity
         await connection.execute(
           'UPDATE stock SET quantity = quantity - ? WHERE product_id = ?',
           [item.quantity, item.product_id]
         );
+
+        // For batch products: deactivate the corresponding stock_items
+        if (productType === 'batch') {
+          await connection.execute(
+            'UPDATE stock_items SET status = 0 WHERE receipt_id = ? AND product_id = ? AND status = 1',
+            [id, item.product_id]
+          );
+        }
       }
 
       await connection.execute(

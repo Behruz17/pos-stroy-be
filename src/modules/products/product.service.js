@@ -3,7 +3,7 @@ const db = require('../../config/db');
 const productService = {
   getAll: async () => {
     const [rows] = await db.execute(`
-      SELECT p.id, p.name, p.manufacturer, p.created_at, p.image, p.notification_threshold, p.product_code, p.status,
+      SELECT p.id, p.name, p.manufacturer, p.created_at, p.image, p.notification_threshold, p.product_code, p.type, p.status,
              COALESCE(s.quantity, 0) as stock_quantity,
              latest_sri.purchase_cost,
              latest_sri.selling_price,
@@ -36,7 +36,7 @@ const productService = {
 
   getById: async (id) => {
     const [rows] = await db.execute(`
-      SELECT p.id, p.name, p.manufacturer, p.created_at, p.image, p.notification_threshold, p.product_code, p.status,
+      SELECT p.id, p.name, p.manufacturer, p.created_at, p.image, p.notification_threshold, p.product_code, p.type, p.status,
              COALESCE(s.quantity, 0) as stock_quantity,
              latest_sri.purchase_cost,
              latest_sri.selling_price,
@@ -72,7 +72,7 @@ const productService = {
     return rows[0];
   },
 
-  create: async ({ name, manufacturer, image, notification_threshold, product_code }) => {
+  create: async ({ name, manufacturer, image, notification_threshold, product_code, type }) => {
     if (product_code) {
       const [existing] = await db.execute(
         'SELECT id FROM products WHERE product_code = ? AND status = 1',
@@ -83,20 +83,22 @@ const productService = {
       }
     }
 
+    const productType = type === 'batch' ? 'batch' : 'simple';
+
     const [result] = await db.execute(
-      'INSERT INTO products (name, manufacturer, image, notification_threshold, product_code, status) VALUES (?, ?, ?, ?, ?, ?)',
-      [name, manufacturer || null, image || null, notification_threshold || 10, product_code || null, 1]
+      'INSERT INTO products (name, manufacturer, image, notification_threshold, product_code, type, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [name, manufacturer || null, image || null, notification_threshold || 10, product_code || null, productType, 1]
     );
 
     const [newProduct] = await db.execute(
-      'SELECT id, name, manufacturer, created_at, image, notification_threshold, product_code, status FROM products WHERE id = ? AND status = 1',
+      'SELECT id, name, manufacturer, created_at, image, notification_threshold, product_code, type, status FROM products WHERE id = ? AND status = 1',
       [result.insertId]
     );
 
     return newProduct[0];
   },
 
-  update: async (id, { name, manufacturer, image, notification_threshold, product_code }) => {
+  update: async (id, { name, manufacturer, image, notification_threshold, product_code, type }) => {
     if (product_code) {
       const [existing] = await db.execute(
         'SELECT id FROM products WHERE product_code = ? AND id != ? AND status = 1',
@@ -131,6 +133,10 @@ const productService = {
       updates.push('product_code = ?');
       values.push(product_code || null);
     }
+    if (type !== undefined) {
+      updates.push('type = ?');
+      values.push(type === 'batch' ? 'batch' : 'simple');
+    }
 
     if (updates.length === 0) {
       return { error: 'No fields to update' };
@@ -147,7 +153,7 @@ const productService = {
     }
 
     const [updatedProduct] = await db.execute(
-      'SELECT id, name, manufacturer, created_at, image, notification_threshold, product_code, status FROM products WHERE id = ? AND status = 1',
+      'SELECT id, name, manufacturer, created_at, image, notification_threshold, product_code, type, status FROM products WHERE id = ? AND status = 1',
       [id]
     );
 
@@ -165,6 +171,50 @@ const productService = {
     }
 
     return { success: true };
+  },
+
+  getStockItems: async (id) => {
+    // Check if product exists and get its type
+    const [productRows] = await db.execute(
+      'SELECT id, name, type FROM products WHERE id = ? AND status = 1',
+      [id]
+    );
+
+    if (productRows.length === 0) {
+      return { error: 'Product not found' };
+    }
+
+    const product = productRows[0];
+
+    // For simple products, return message
+    if (product.type === 'simple') {
+      return {
+        product_id: product.id,
+        product_type: 'simple',
+        product_name: product.name,
+        message: 'This is a simple product, no batches available'
+      };
+    }
+
+    // For batch products, get all active stock items
+    const [batchRows] = await db.execute(
+      `SELECT id, batch_code, quantity, purchase_cost, selling_price, receipt_id, created_at, status
+       FROM stock_items
+       WHERE product_id = ? AND status = 1
+       ORDER BY created_at ASC`,
+      [id]
+    );
+
+    // Calculate total quantity
+    const totalQuantity = batchRows.reduce((sum, batch) => sum + parseFloat(batch.quantity), 0);
+
+    return {
+      product_id: product.id,
+      product_type: 'batch',
+      product_name: product.name,
+      total_quantity: totalQuantity,
+      batches: batchRows
+    };
   }
 };
 

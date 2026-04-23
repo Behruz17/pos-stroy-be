@@ -101,6 +101,26 @@ const productController = {
       console.error('Delete product error:', error);
       res.status(500).json({ error: 'Server error' });
     }
+  },
+
+  getStockItems: async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const result = await productService.getStockItems(id);
+
+      if (result.error) {
+        if (result.error === 'Product not found') {
+          return res.status(404).json({ error: result.error });
+        }
+        return res.status(400).json({ error: result.error });
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error('Get stock items error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
   }
 };
 

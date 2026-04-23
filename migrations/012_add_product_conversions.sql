@@ -5,7 +5,9 @@
 CREATE TABLE IF NOT EXISTS `product_conversions` (
   `id` int NOT NULL AUTO_INCREMENT,
   `from_product_id` int NOT NULL,
+  `from_stock_item_id` int DEFAULT NULL,
   `to_product_id` int NOT NULL,
+  `to_stock_item_id` int DEFAULT NULL,
   `from_quantity` decimal(10,2) NOT NULL,
   `to_quantity` decimal(10,2) NOT NULL,
   `purchase_cost` decimal(10,2) NOT NULL,

@@ -66,14 +66,53 @@ const salesService = {
         return { error: 'Items are required' };
       }
 
+      // Validate stock availability and batch requirements
       for (const item of items) {
-        const [stockRows] = await connection.execute(
-          'SELECT quantity FROM stock WHERE product_id = ?',
+        // Check product type
+        const [productRows] = await connection.execute(
+          'SELECT type FROM products WHERE id = ? AND status = 1',
           [item.product_id]
         );
-        const available = stockRows.length > 0 ? parseFloat(stockRows[0].quantity) : 0;
-        if (available < item.quantity) {
-          return { error: `Insufficient stock for product ${item.product_id}` };
+        const productType = productRows[0]?.type || 'simple';
+
+        if (productType === 'batch') {
+          // For batch products, stock_item_id is required
+          if (!item.stock_item_id) {
+            await connection.rollback();
+            connection.release();
+            return { error: `Stock item (batch) is required for batch product ${item.product_id}` };
+          }
+
+          // Check specific batch quantity
+          const [stockItemRows] = await connection.execute(
+            'SELECT quantity FROM stock_items WHERE id = ? AND product_id = ? AND status = 1',
+            [item.stock_item_id, item.product_id]
+          );
+
+          if (stockItemRows.length === 0) {
+            await connection.rollback();
+            connection.release();
+            return { error: `Stock item ${item.stock_item_id} not found for product ${item.product_id}` };
+          }
+
+          const batchAvailable = parseFloat(stockItemRows[0].quantity);
+          if (batchAvailable < item.quantity) {
+            await connection.rollback();
+            connection.release();
+            return { error: `Insufficient batch stock for product ${item.product_id}. Available: ${batchAvailable}, Required: ${item.quantity}` };
+          }
+        } else {
+          // For simple products, check total stock
+          const [stockRows] = await connection.execute(
+            'SELECT quantity FROM stock WHERE product_id = ?',
+            [item.product_id]
+          );
+          const available = stockRows.length > 0 ? parseFloat(stockRows[0].quantity) : 0;
+          if (available < item.quantity) {
+            await connection.rollback();
+            connection.release();
+            return { error: `Insufficient stock for product ${item.product_id}` };
+          }
         }
       }
 
@@ -100,15 +139,46 @@ const salesService = {
       for (const item of items) {
         const unitValue = item.unit_value || 1.0;
         const itemTotal = item.quantity * item.unit_price * unitValue;
+
+        // Check product type
+        const [productRows] = await connection.execute(
+          'SELECT type FROM products WHERE id = ? AND status = 1',
+          [item.product_id]
+        );
+        const productType = productRows[0]?.type || 'simple';
+
+        // Insert sale item with stock_item_id for batch products
         await connection.execute(
-          'INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, unit_value, total_price, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [saleId, item.product_id, item.quantity, item.unit_price, unitValue, itemTotal, 1]
+          'INSERT INTO sale_items (sale_id, product_id, stock_item_id, quantity, unit_price, unit_value, total_price, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [saleId, item.product_id, productType === 'batch' ? item.stock_item_id : null, item.quantity, item.unit_price, unitValue, itemTotal, 1]
         );
 
+        // Update stock quantity
         await connection.execute(
           'UPDATE stock SET quantity = quantity - ? WHERE product_id = ?',
           [item.quantity, item.product_id]
         );
+
+        // For batch products: update specific batch quantity
+        if (productType === 'batch' && item.stock_item_id) {
+          await connection.execute(
+            'UPDATE stock_items SET quantity = quantity - ? WHERE id = ? AND product_id = ?',
+            [item.quantity, item.stock_item_id, item.product_id]
+          );
+
+          // Check if batch quantity is now 0 and deactivate if so
+          const [updatedBatchRows] = await connection.execute(
+            'SELECT quantity FROM stock_items WHERE id = ? AND product_id = ?',
+            [item.stock_item_id, item.product_id]
+          );
+
+          if (updatedBatchRows.length > 0 && parseFloat(updatedBatchRows[0].quantity) <= 0) {
+            await connection.execute(
+              'UPDATE stock_items SET status = 0 WHERE id = ? AND product_id = ?',
+              [item.stock_item_id, item.product_id]
+            );
+          }
+        }
       }
 
       if (customer_id) {
@@ -295,30 +365,125 @@ const salesService = {
 
       // Update items if provided
       if (items && items.length > 0) {
-        // Restore stock for old items
+        // Restore stock for old items (handle batch products)
         for (const item of existingItems) {
+          // Restore main stock
           await connection.execute(
             'UPDATE stock SET quantity = quantity + ? WHERE product_id = ?',
             [item.quantity, item.product_id]
           );
+
+          // If batch product, restore specific batch quantity
+          if (item.stock_item_id) {
+            await connection.execute(
+              'UPDATE stock_items SET quantity = quantity + ? WHERE id = ? AND product_id = ?',
+              [item.quantity, item.stock_item_id, item.product_id]
+            );
+            // Reactivate batch if it was deactivated
+            await connection.execute(
+              'UPDATE stock_items SET status = 1 WHERE id = ? AND product_id = ? AND status = 0',
+              [item.stock_item_id, item.product_id]
+            );
+          }
         }
 
         // Mark old items as deleted
         await connection.execute('UPDATE sale_items SET status = 0 WHERE sale_id = ?', [id]);
 
+        // Validate and add new items
+        for (const item of items) {
+          // Check product type
+          const [productRows] = await connection.execute(
+            'SELECT type FROM products WHERE id = ? AND status = 1',
+            [item.product_id]
+          );
+          const productType = productRows[0]?.type || 'simple';
+
+          if (productType === 'batch') {
+            // For batch products, stock_item_id is required
+            if (!item.stock_item_id) {
+              await connection.rollback();
+              connection.release();
+              return { error: `Stock item (batch) is required for batch product ${item.product_id}` };
+            }
+
+            // Check specific batch quantity
+            const [stockItemRows] = await connection.execute(
+              'SELECT quantity FROM stock_items WHERE id = ? AND product_id = ? AND status = 1',
+              [item.stock_item_id, item.product_id]
+            );
+
+            if (stockItemRows.length === 0) {
+              await connection.rollback();
+              connection.release();
+              return { error: `Stock item ${item.stock_item_id} not found for product ${item.product_id}` };
+            }
+
+            const batchAvailable = parseFloat(stockItemRows[0].quantity);
+            if (batchAvailable < item.quantity) {
+              await connection.rollback();
+              connection.release();
+              return { error: `Insufficient batch stock for product ${item.product_id}. Available: ${batchAvailable}, Required: ${item.quantity}` };
+            }
+          } else {
+            // For simple products, check total stock
+            const [stockRows] = await connection.execute(
+              'SELECT quantity FROM stock WHERE product_id = ?',
+              [item.product_id]
+            );
+            const available = stockRows.length > 0 ? parseFloat(stockRows[0].quantity) : 0;
+            if (available < item.quantity) {
+              await connection.rollback();
+              connection.release();
+              return { error: `Insufficient stock for product ${item.product_id}` };
+            }
+          }
+        }
+
         // Add new items and update stock
         for (const item of items) {
           const unitValue = item.unit_value || 1.0;
           const itemTotal = item.quantity * item.unit_price * unitValue;
+
+          // Check product type
+          const [productRows] = await connection.execute(
+            'SELECT type FROM products WHERE id = ? AND status = 1',
+            [item.product_id]
+          );
+          const productType = productRows[0]?.type || 'simple';
+
+          // Insert sale item with stock_item_id for batch products
           await connection.execute(
-            'INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, unit_value, total_price, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [id, item.product_id, item.quantity, item.unit_price, unitValue, itemTotal, 1]
+            'INSERT INTO sale_items (sale_id, product_id, stock_item_id, quantity, unit_price, unit_value, total_price, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, item.product_id, productType === 'batch' ? item.stock_item_id : null, item.quantity, item.unit_price, unitValue, itemTotal, 1]
           );
 
+          // Update stock quantity
           await connection.execute(
             'UPDATE stock SET quantity = quantity - ? WHERE product_id = ?',
             [item.quantity, item.product_id]
           );
+
+          // For batch products: update specific batch quantity
+          if (productType === 'batch' && item.stock_item_id) {
+            await connection.execute(
+              'UPDATE stock_items SET quantity = quantity - ? WHERE id = ? AND product_id = ?',
+              [item.quantity, item.stock_item_id, item.product_id]
+            );
+
+            // Check if batch quantity is now 0 and deactivate if so
+            const [updatedBatchRows] = await connection.execute(
+              'SELECT quantity FROM stock_items WHERE id = ? AND product_id = ?',
+              [item.stock_item_id, item.product_id]
+            );
+
+            if (updatedBatchRows.length > 0 && parseFloat(updatedBatchRows[0].quantity) <= 0) {
+              await connection.execute(
+                'UPDATE stock_items SET status = 0 WHERE id = ? AND product_id = ?',
+                [item.stock_item_id, item.product_id]
+              );
+            }
+          }
         }
       }
 
@@ -375,15 +540,29 @@ const salesService = {
       const { customer_id, total_amount, payment_status } = saleRows[0];
 
       const [itemRows] = await connection.execute(
-        'SELECT product_id, quantity FROM sale_items WHERE sale_id = ? AND status = 1',
+        'SELECT product_id, quantity, stock_item_id FROM sale_items WHERE sale_id = ? AND status = 1',
         [id]
       );
 
       for (const item of itemRows) {
+        // Restore main stock
         await connection.execute(
           'UPDATE stock SET quantity = quantity + ? WHERE product_id = ?',
           [item.quantity, item.product_id]
         );
+
+        // If batch product, restore specific batch quantity
+        if (item.stock_item_id) {
+          await connection.execute(
+            'UPDATE stock_items SET quantity = quantity + ? WHERE id = ? AND product_id = ?',
+            [item.quantity, item.stock_item_id, item.product_id]
+          );
+          // Reactivate batch if it was deactivated
+          await connection.execute(
+            'UPDATE stock_items SET status = 1 WHERE id = ? AND product_id = ? AND status = 0',
+            [item.stock_item_id, item.product_id]
+          );
+        }
       }
 
       if (customer_id && payment_status === 'DEBT') {

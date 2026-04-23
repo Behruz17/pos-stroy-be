@@ -228,6 +228,7 @@ CREATE TABLE `products` (
   `image` varchar(500) DEFAULT NULL,
   `notification_threshold` int NOT NULL DEFAULT '10',
   `product_code` varchar(100) DEFAULT NULL,
+  `type` enum('simple','batch') NOT NULL DEFAULT 'simple',
   `status` tinyint(1) NOT NULL DEFAULT '1'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
@@ -430,6 +431,7 @@ CREATE TABLE `sale_items` (
   `id` int NOT NULL,
   `sale_id` int NOT NULL,
   `product_id` int NOT NULL,
+  `stock_item_id` int DEFAULT NULL,
   `quantity` int NOT NULL,
   `unit_price` decimal(10,2) NOT NULL,
   `unit_value` decimal(10,2) NOT NULL DEFAULT '1.00',
@@ -501,6 +503,27 @@ INSERT INTO `stock` (`id`, `product_id`, `quantity`, `status`) VALUES
 (18, 106, '2636', 1),
 (19, 21, '1', 1),
 (20, 107, '1201', 1);
+
+-- --------------------------------------------------------
+
+--
+-- Структура таблицы `stock_items`
+--
+-- Создание: Апр 23 2026 г., 12:00
+--
+
+DROP TABLE IF EXISTS `stock_items`;
+CREATE TABLE `stock_items` (
+  `id` int NOT NULL,
+  `product_id` int NOT NULL,
+  `quantity` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `batch_code` varchar(100) DEFAULT NULL,
+  `purchase_cost` decimal(10,2) DEFAULT NULL,
+  `selling_price` decimal(10,2) DEFAULT NULL,
+  `receipt_id` int DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `status` tinyint(1) NOT NULL DEFAULT '1'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 -- --------------------------------------------------------
 

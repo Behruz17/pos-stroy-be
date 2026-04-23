@@ -11,6 +11,25 @@ Authorization: Bearer <token>
 
 ---
 
+## Типы товаров (Simple vs Batch)
+
+Система поддерживает два типа товаров:
+
+- **simple** — Обычные товары, количество суммируется в общий остаток
+- **batch** — Товары с партиями (рулоны, паллеты), каждый приход создаёт отдельную партию
+
+### Особенности batch товаров:
+- Приход товара создаёт запись в `stock_items` с уникальным `batch_code`
+- При продаже обязательно указание `stock_item_id` (ID партии)
+- Партия автоматически деактивируется при остатке = 0
+- При удалении продажи партия восстанавливается и реактивируется
+
+### Поле `type` в товарах:
+- `type: "simple"` — обычный товар (по умолчанию)
+- `type: "batch"` — партионный товар
+
+---
+
 ## Auth Endpoints
 
 ### POST `/auth/login`
@@ -415,6 +434,7 @@ Authorization: Bearer <token>
     "name": "Цемент М500",
     "manufacturer": "Таджикцемент",
     "product_code": "CEM-500-001",
+    "type": "simple",
     "image": "https://example.com/cement.jpg",
     "notification_threshold": 50,
     "stock_quantity": 150,
@@ -429,6 +449,7 @@ Authorization: Bearer <token>
 ```
 
 **Notes:**
+- `type` - Тип товара: `simple` (обычный) или `batch` (партионный)
 - `purchase_cost` - Последняя цена покупки из последнего прихода
 - `selling_price` - Последняя цена продажи из последнего прихода
 - `purchase_cost_converted` - Сконвертированная цена покупки в TJS (null для TJS)
@@ -454,6 +475,7 @@ Authorization: Bearer <token>
   "name": "Цемент М500",
   "manufacturer": "Таджикцемент",
   "product_code": "CEM-500-001",
+  "type": "simple",
   "image": "https://example.com/cement.jpg",
   "notification_threshold": 50,
   "stock_quantity": 150,
@@ -467,6 +489,7 @@ Authorization: Bearer <token>
 ```
 
 **Notes:**
+- `type` - Тип товара: `simple` (обычный) или `batch` (партионный)
 - `purchase_cost` - Последняя цена покупки из последнего прихода
 - `selling_price` - Последняя цена продажи из последнего прихода
 - `purchase_cost_converted` - Сконвертированная цена покупки в TJS (null для TJS)
@@ -494,8 +517,17 @@ Content-Type: multipart/form-data
 name: Цемент М500
 manufacturer: Таджикцемент
 product_code: CEM-500-001
+type: simple
 image: [файл изображения]
 notification_threshold: 50
+```
+
+**Или для batch товара:**
+```
+name: Рулон оцинковки 0.5мм
+product_code: STEEL-05
+type: batch
+notification_threshold: 5
 ```
 
 **Response (201):**
@@ -505,6 +537,7 @@ notification_threshold: 50
   "name": "Цемент М500",
   "manufacturer": "Таджикцемент",
   "product_code": "CEM-500-001",
+  "type": "simple",
   "image": "/uploads/products/product-1712841234567-123456789.jpg",
   "notification_threshold": 50,
   "created_at": "2026-04-04T18:00:00.000Z"
@@ -512,8 +545,10 @@ notification_threshold: 50
 ```
 
 **Notes:**
+- Поле `type` — тип товара: `simple` (по умолчанию) или `batch`
 - Поле `image` — файл изображения (JPEG, PNG, GIF, WEBP), максимум 5MB
 - Изображение доступно по URL: `http://localhost:3000/uploads/products/{filename}`
+- Для batch товаров рекомендуется указывать `notification_threshold` для контроля остатков
 
 **Errors:**
 - `400` — Поле name обязательно
@@ -537,6 +572,7 @@ Content-Type: multipart/form-data
 name: Цемент М400
 manufacturer: Таджикцемент
 product_code: CEM-400-001
+type: batch
 image: [файл изображения]
 notification_threshold: 30
 ```
@@ -548,6 +584,7 @@ notification_threshold: 30
   "name": "Цемент М400",
   "manufacturer": "Таджикцемент",
   "product_code": "CEM-400-001",
+  "type": "batch",
   "image": "/uploads/products/product-1712841234567-987654321.jpg",
   "notification_threshold": 30,
   "created_at": "2026-04-04T18:00:00.000Z"
@@ -555,6 +592,8 @@ notification_threshold: 30
 ```
 
 **Notes:**
+- Поле `type` — можно изменить тип товара: `simple` или `batch`
+- **Важно:** Смена типа не удаляет существующие партии, но изменит логику будущих операций
 - Поле `image` — файл изображения (JPEG, PNG, GIF, WEBP), максимум 5MB
 - Если изображение не передано, текущее изображение останется без изменений
 - Изображение доступно по URL: `http://localhost:3000/uploads/products/{filename}`
@@ -584,6 +623,112 @@ Authorization: Bearer <token>
 
 **Errors:**
 - `404` — Товар не найден
+
+---
+
+## Stock Items Endpoints (Batch Inventory)
+
+Эндпоинты для работы с партиями товаров (только для товаров типа `batch`).
+
+### GET `/products/:id/stock-items`
+
+Получение списка активных партий для товара.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200) для batch товара:**
+```json
+{
+  "product_id": 100,
+  "product_type": "batch",
+  "product_name": "Рулон оцинковки 0.5мм",
+  "total_quantity": 950.00,
+  "batches": [
+    {
+      "id": 1,
+      "batch_code": "BATCH-18-1713851234567",
+      "quantity": 500.00,
+      "purchase_cost": 50.00,
+      "selling_price": 65.00,
+      "receipt_id": 18,
+      "created_at": "2026-04-15T10:00:00.000Z",
+      "status": 1
+    },
+    {
+      "id": 2,
+      "batch_code": "BATCH-19-1713851234568",
+      "quantity": 300.00,
+      "purchase_cost": 52.00,
+      "selling_price": 67.00,
+      "receipt_id": 19,
+      "created_at": "2026-04-16T11:00:00.000Z",
+      "status": 1
+    },
+    {
+      "id": 3,
+      "batch_code": "BATCH-20-1713851234569",
+      "quantity": 150.00,
+      "purchase_cost": 48.00,
+      "selling_price": 63.00,
+      "receipt_id": 20,
+      "created_at": "2026-04-17T12:00:00.000Z",
+      "status": 1
+    }
+  ]
+}
+```
+
+**Response (200) для simple товара:**
+```json
+{
+  "product_id": 1,
+  "product_type": "simple",
+  "product_name": "Цемент М500",
+  "message": "This is a simple product, no batches available"
+}
+```
+
+**Notes:**
+- Возвращает только активные партии (`status = 1`)
+- `total_quantity` — сумма всех активных партий
+- `batch_code` генерируется автоматически: `BATCH-{receipt_id}-{timestamp}`
+- `receipt_id` — ID прихода, при котором была создана партия
+
+**Errors:**
+- `404` — Товар не найден
+
+---
+
+### GET `/stock-items/:id`
+
+Получение информации о конкретной партии.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "product_id": 100,
+  "product_name": "Рулон оцинковки 0.5мм",
+  "quantity": 500.00,
+  "batch_code": "BATCH-18-1713851234567",
+  "purchase_cost": 50.00,
+  "selling_price": 65.00,
+  "receipt_id": 18,
+  "created_at": "2026-04-15T10:00:00.000Z",
+  "status": 1
+}
+```
+
+**Errors:**
+- `404` — Партия не найдена
 
 ---
 
@@ -853,7 +998,8 @@ Authorization: Bearer <token>
       "product_id": 6,
       "quantity": 50,
       "purchase_cost": 30.00,
-      "selling_price": 45.00
+      "selling_price": 45.00,
+      "batch_code": "PARTY-A"  // опционально, только для batch товаров
     }
   ]
 }
@@ -864,6 +1010,7 @@ Authorization: Bearer <token>
 - `rate` - Курс конвертации к TJS. По умолчанию 1.0000
 - `total_amount_converted` - Сконвертированная сумма в TJS (null для TJS)
 - `purchase_cost_converted` - Сконвертированная закупочная цена в TJS (null для TJS)
+- `batch_code` - Опционально для batch товаров. Если не указан — генерируется автоматически: `BATCH-{receipt_id}-{timestamp}`
 
 **Response (201):**
 ```json
@@ -876,7 +1023,10 @@ Authorization: Bearer <token>
 **Логика:**
 - Создает запись в `stock_receipts`
 - Создает записи в `stock_receipt_items`
-- Увеличивает остатки в `stock` (INSERT ... ON DUPLICATE KEY UPDATE)
+- **Для simple товаров:** Увеличивает остатки в `stock` (суммирование)
+- **Для batch товаров:** 
+  - Создает новую запись в `stock_items` с `batch_code`
+  - Увеличивает общий остаток в `stock`
 - Обновляет баланс поставщика в `suppliers`
 - Создает запись в `supplier_operations` (type: 'RECEIPT')
 
@@ -904,6 +1054,7 @@ Authorization: Bearer <token>
 
 **Логика:**
 - Уменьшает остатки в `stock`
+- **Для batch товаров:** Деактивирует соответствующие партии в `stock_items`
 - Удаляет записи из `stock_receipt_items`
 - Обновляет баланс поставщика (вычитает сумму)
 - Удаляет запись из `supplier_operations`
@@ -1808,6 +1959,16 @@ Authorization: Bearer <token>
       "quantity": 10,
       "unit_price": 50.00,
       "total_price": 500.00
+    },
+    {
+      "id": 2,
+      "product_id": 100,
+      "stock_item_id": 5,
+      "product_name": "Рулон оцинковки",
+      "product_code": "STEEL-05",
+      "quantity": 50,
+      "unit_price": 65.00,
+      "total_price": 3250.00
     }
   ]
 }
@@ -1815,6 +1976,7 @@ Authorization: Bearer <token>
 
 **Notes:**
 - `stage` — Текущий этап продажи: `ordered`, `ready`, `delivered`
+- `stock_item_id` — ID партии (только для batch товаров). NULL для simple товаров.
 
 **Errors:**
 - `404` — Продажа не найдена
@@ -1840,6 +2002,12 @@ Authorization: Bearer <token>
       "product_id": 6,
       "quantity": 5,
       "unit_price": 60.00
+    },
+    {
+      "product_id": 100,
+      "stock_item_id": 5,
+      "quantity": 20,
+      "unit_price": 65.00
     }
   ]
 }
@@ -1849,7 +2017,7 @@ Authorization: Bearer <token>
 ```json
 {
   "id": 1,
-  "total_amount": "300.00"
+  "total_amount": "1600.00"
 }
 ```
 
@@ -1858,18 +2026,23 @@ Authorization: Bearer <token>
 - При изменении `payment_status` обновляет баланс клиента
 - При изменении `items`:
   - Восстанавливает остатки старых позиций на складе
+  - **Для batch товаров:** Восстанавливает остатки партий и реактивирует их при необходимости
   - Списывает остатки для новых позиций
+  - **Для batch товаров:** Проверяет и списывает из конкретной партии
   - Пересчитывает `total_amount`
 - Обновляет запись в `customer_operations` при изменении клиента или статуса
 
 **Notes:**
 - Все поля опциональны — обновляются только переданные
 - Если `items` не переданы, позиции продажи остаются без изменений
+- Для batch товаров `stock_item_id` обязателен
 
 **Errors:**
 - `404` — Продажа не найдена
 - `400` — Items должен быть непустым массивом
 - `400` — Каждый item должен иметь product_id, quantity > 0 и unit_price
+- `400` — Для batch товара обязательно указание stock_item_id
+- `400` — Недостаточно остатков в партии для batch товара
 
 ---
 
@@ -1902,6 +2075,12 @@ Authorization: Bearer <token>
       "product_id": 6,
       "quantity": 10,
       "unit_price": 30.00
+    },
+    {
+      "product_id": 100,
+      "stock_item_id": 5,
+      "quantity": 50,
+      "unit_price": 65.00
     }
   ]
 }
@@ -1913,6 +2092,8 @@ Authorization: Bearer <token>
 - По умолчанию используется счет 1 (Наличные)
 - `stage` - Этап продажи: `ordered` (по умолчанию), `ready`, `delivered`
 - `paid_amount` - Сумма частичной оплаты (только для `PARTIAL`)
+- `stock_item_id` - **Обязательно для batch товаров**. ID партии из `/products/:id/stock-items`
+- Для simple товаров `stock_item_id` не указывается
 
 **Notes:**
 - `debt_deadline` - Срок погашения долга (ISO 8601 формат). Только для payment_status = "DEBT"
@@ -1931,9 +2112,12 @@ Authorization: Bearer <token>
 
 **Логика:**
 - Проверяет достаточность остатков на складе
+- **Для batch товаров:** Проверяет наличие и достаточность остатков в конкретной партии
 - Создает запись в `sales`
 - Создает записи в `sale_items`
 - Уменьшает остатки в `stock`
+- **Для batch товаров:** Уменьшает остатки в конкретной партии `stock_items`
+- **Для batch товаров:** Автоматически деактивирует партию при остатке = 0
 - Обновляет баланс клиента и создает запись в `customer_operations` (если DEBT)
 
 **Errors:**
@@ -1942,6 +2126,9 @@ Authorization: Bearer <token>
 - `400` — unit_value должен быть положительным числом
 - `400` — debt_deadline должен быть валидной датой
 - `400` — Недостаточно остатков на складе
+- `400` — Для batch товара обязательно указание stock_item_id
+- `400` — Партия не найдена для batch товара
+- `400` — Недостаточно остатков в партии для batch товара
 
 ---
 
@@ -1963,6 +2150,8 @@ Authorization: Bearer <token>
 
 **Логика:**
 - Возвращает остатки в `stock`
+- **Для batch товаров:** Возвращает остатки в конкретную партию `stock_items`
+- **Для batch товаров:** Реактивирует партию если она была деактивирована
 - Удаляет записи из `sale_items`
 - Обновляет баланс клиента (если DEBT)
 - Удаляет запись из `customer_operations`
@@ -2351,6 +2540,7 @@ Authorization: Bearer <token>
 ```json
 {
   "from_product_id": 5,
+  "from_stock_item_id": 10,
   "to_product_id": 6,
   "from_quantity": 10,
   "to_quantity": 5,
@@ -2360,10 +2550,17 @@ Authorization: Bearer <token>
 
 **Notes:**
 - `from_product_id` — ID исходного товара A (обязательно)
+- `from_stock_item_id` — ID партии исходного товара (обязательно если from_product — batch)
 - `to_product_id` — ID целевого товара B (обязательно)
 - `from_quantity` — Количество списываемого товара A (обязательно)
 - `to_quantity` — Количество приходуемого товара B (обязательно)
 - `selling_price` — Цена продажи товара B (опционально)
+
+**Логика работы с типами товаров:**
+- **Из simple товара:** Списывает из общего остатка `stock`
+- **Из batch товара:** Требуется `from_stock_item_id`, списывает из конкретной партии
+- **В simple товар:** Приходует в общий остаток `stock`
+- **В batch товар:** Создаёт новую партию в `stock_items` с кодом `CONV-{timestamp}`
 
 **Логика расчёта себестоимости:**
 ```
@@ -2389,6 +2586,9 @@ Authorization: Bearer <token>
 - `400` — Исходный и целевой товары должны быть разными
 - `400` — Количества должны быть положительными числами
 - `400` — Недостаточно остатков исходного товара
+- `400` — Для batch товара обязательно указание from_stock_item_id
+- `400` — Партия не найдена для batch товара
+- `400` — Недостаточно остатков в партии для batch товара
 - `404` — Товар не найден
 
 ---
@@ -2410,8 +2610,10 @@ Authorization: Bearer <token>
 ```
 
 **Логика:**
-- Возвращает товар A на склад: `+from_quantity`
-- Списывает товар B со склада: `-to_quantity`
+- Возвращает остатки исходного товара в `stock`
+- **Для batch исходного товара:** Возвращает остатки в партию и реактивирует её
+- Уменьшает остатки целевого товара в `stock`
+- **Для batch целевого товара:** Деактивирует созданную партию
 - Soft delete записи — `status = 0`
 
 **⚠️ Важно:**
