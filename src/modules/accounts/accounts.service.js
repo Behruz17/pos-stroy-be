@@ -109,6 +109,13 @@ const accountsService = {
         [account_id, type, amount, reference_type, reference_id, description, 1]
       );
 
+      // Update account balance based on transaction type
+      const balanceChange = type === 'INCOME' ? amount : -amount;
+      await connection.execute(
+        'UPDATE accounts SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [balanceChange, account_id]
+      );
+
       await connection.commit();
       return { id: result.insertId };
     } catch (error) {
