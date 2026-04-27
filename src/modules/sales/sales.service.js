@@ -46,9 +46,10 @@ const salesService = {
     const sale = rows[0];
 
     const [items] = await db.execute(`
-      SELECT si.*, p.name as product_name, p.product_code
+      SELECT si.*, p.name as product_name, p.product_code, s.name as style_name
       FROM sale_items si
       JOIN products p ON si.product_id = p.id AND p.status = 1
+      LEFT JOIN styles s ON si.style_id = s.id AND s.status = 1
       WHERE si.sale_id = ? AND si.status = 1
     `, [id]);
 
@@ -56,7 +57,7 @@ const salesService = {
     return sale;
   },
 
-  create: async ({ created_by, customer_id, payment_status, paid_amount, stage, account_id, debt_deadline, items }) => {
+  create: async ({ created_by, customer_id, payment_status, cash_amount, electronic_amount, stage, account_id, debt_deadline, items }) => {
     const connection = await db.getConnection();
 
     try {
@@ -64,6 +65,28 @@ const salesService = {
 
       if (!items || items.length === 0) {
         return { error: 'Items are required' };
+      }
+
+      // Если customer_id не указан, найти клиента по умолчанию
+      let finalCustomerId = customer_id;
+      if (!finalCustomerId) {
+        const [defaultCustomer] = await connection.execute(
+          'SELECT id FROM customers WHERE is_default = 1 AND status = 1 LIMIT 1'
+        );
+        
+        if (defaultCustomer.length > 0) {
+          finalCustomerId = defaultCustomer[0].id;
+        }
+      }
+
+      // Validate mixed payment amounts
+      if (cash_amount !== undefined && electronic_amount !== undefined) {
+        const totalPaid = parseFloat(cash_amount) + parseFloat(electronic_amount);
+        if (totalPaid < 0) {
+          await connection.rollback();
+          connection.release();
+          return { error: 'Payment amounts cannot be negative' };
+        }
       }
 
       // Validate stock availability and batch requirements
@@ -76,31 +99,60 @@ const salesService = {
         const productType = productRows[0]?.type || 'simple';
 
         if (productType === 'batch') {
-          // For batch products, stock_item_id is required
-          if (!item.stock_item_id) {
-            await connection.rollback();
-            connection.release();
-            return { error: `Stock item (batch) is required for batch product ${item.product_id}` };
-          }
-
-          // Check specific batch quantity
-          const [stockItemRows] = await connection.execute(
-            'SELECT quantity FROM stock_items WHERE id = ? AND product_id = ? AND status = 1',
-            [item.stock_item_id, item.product_id]
+          // For batch products, check if stock_items exist for this product
+          const [existingBatches] = await connection.execute(
+            'SELECT id, quantity FROM stock_items WHERE product_id = ? AND status = 1',
+            [item.product_id]
           );
 
-          if (stockItemRows.length === 0) {
-            await connection.rollback();
-            connection.release();
-            return { error: `Stock item ${item.stock_item_id} not found for product ${item.product_id}` };
+          let stockItemId = item.stock_item_id;
+
+          // If no batches exist, create one with current stock quantity
+          if (existingBatches.length === 0) {
+            // Get current stock from main stock table
+            const [stockRows] = await connection.execute(
+              'SELECT quantity FROM stock WHERE product_id = ?',
+              [item.product_id]
+            );
+            const currentStock = stockRows.length > 0 ? parseFloat(stockRows[0].quantity) : 0;
+
+            // Create new batch
+            const batchCode = `AUTO-BATCH-${item.product_id}-${Date.now()}`;
+            const [batchResult] = await connection.execute(
+              'INSERT INTO stock_items (product_id, quantity, batch_code, purchase_cost, selling_price, status) VALUES (?, ?, ?, ?, ?, ?)',
+              [item.product_id, currentStock, batchCode, null, null, 1]
+            );
+            stockItemId = batchResult.insertId;
+          } else {
+            // If batches exist, stock_item_id is required
+            if (!stockItemId) {
+              await connection.rollback();
+              connection.release();
+              return { error: `Stock item (batch) is required for batch product ${item.product_id}. Available batches: ${existingBatches.length}` };
+            }
+
+            // Check specific batch quantity
+            const [stockItemRows] = await connection.execute(
+              'SELECT quantity FROM stock_items WHERE id = ? AND product_id = ? AND status = 1',
+              [stockItemId, item.product_id]
+            );
+
+            if (stockItemRows.length === 0) {
+              await connection.rollback();
+              connection.release();
+              return { error: `Stock item ${stockItemId} not found for product ${item.product_id}` };
+            }
+
+            const batchAvailable = parseFloat(stockItemRows[0].quantity);
+            if (batchAvailable < item.quantity) {
+              await connection.rollback();
+              connection.release();
+              return { error: `Insufficient batch stock for product ${item.product_id}. Available: ${batchAvailable}, Required: ${item.quantity}` };
+            }
           }
 
-          const batchAvailable = parseFloat(stockItemRows[0].quantity);
-          if (batchAvailable < item.quantity) {
-            await connection.rollback();
-            connection.release();
-            return { error: `Insufficient batch stock for product ${item.product_id}. Available: ${batchAvailable}, Required: ${item.quantity}` };
-          }
+          // Store the stock_item_id for later use
+          item.stock_item_id = stockItemId;
         } else {
           // For simple products, check total stock
           const [stockRows] = await connection.execute(
@@ -122,17 +174,48 @@ const salesService = {
         totalAmount += item.quantity * item.unit_price * unitValue;
       }
 
-      // Calculate paid_amount based on payment_status
-      const finalPaidAmount = payment_status === 'PARTIAL' ? (paid_amount || 0) : 
-                              payment_status === 'PAID' ? totalAmount : 0;
+      // Handle mixed payment and calculate payment status
+      const finalCashAmount = cash_amount !== undefined ? parseFloat(cash_amount) : 0;
+      const finalElectronicAmount = electronic_amount !== undefined ? parseFloat(electronic_amount) : 0;
+      const totalPaid = finalCashAmount + finalElectronicAmount;
+      
+      // Calculate payment_status based on total paid amount
+      let calculatedPaymentStatus = 'DEBT';
+      if (totalPaid >= totalAmount) {
+        calculatedPaymentStatus = 'PAID';
+      } else if (totalPaid > 0 && totalPaid < totalAmount) {
+        calculatedPaymentStatus = 'PARTIAL';
+      }
+      
+      // Use provided payment_status or calculated one
+      const finalPaymentStatus = payment_status || calculatedPaymentStatus;
+      
+      // Validate that total paid doesn't exceed total amount
+      if (totalPaid > totalAmount) {
+        await connection.rollback();
+        connection.release();
+        return { error: 'Total payment amount cannot exceed total sale amount' };
+      }
       
       // Validate stage
       const validStages = ['ordered', 'ready', 'delivered'];
       const finalStage = stage && validStages.includes(stage) ? stage : 'ordered';
       
+      // Use provided account_id or determine primary based on payment amounts
+      let primaryAccountId = null;
+      if (finalPaymentStatus === 'PAID' || finalPaymentStatus === 'PARTIAL') {
+        if (account_id) {
+          primaryAccountId = account_id; // Use provided account_id
+        } else if (finalCashAmount >= finalElectronicAmount) {
+          primaryAccountId = 1; // Cash is primary or equal
+        } else {
+          primaryAccountId = 2; // Electronic is primary
+        }
+      }
+      
       const [saleResult] = await connection.execute(
-        'INSERT INTO sales (customer_id, created_by, total_amount, paid_amount, payment_status, stage, debt_deadline, account_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [customer_id || null, created_by, totalAmount, finalPaidAmount, payment_status ? payment_status : 'DEBT', finalStage, debt_deadline || null, account_id || null, 1]
+        'INSERT INTO sales (customer_id, created_by, total_amount, cash_amount, electronic_amount, payment_status, account_id, stage, debt_deadline, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [finalCustomerId || null, created_by, totalAmount, finalCashAmount, finalElectronicAmount, finalPaymentStatus, primaryAccountId, finalStage, debt_deadline || null, 1]
       );
       const saleId = saleResult.insertId;
 
@@ -149,8 +232,8 @@ const salesService = {
 
         // Insert sale item with stock_item_id for batch products
         await connection.execute(
-          'INSERT INTO sale_items (sale_id, product_id, stock_item_id, quantity, unit_price, unit_value, total_price, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [saleId, item.product_id, productType === 'batch' ? item.stock_item_id : null, item.quantity, item.unit_price, unitValue, itemTotal, 1]
+          'INSERT INTO sale_items (sale_id, product_id, stock_item_id, quantity, unit_price, unit_value, total_price, style_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [saleId, item.product_id, productType === 'batch' ? item.stock_item_id : null, item.quantity, item.unit_price, unitValue, itemTotal, item.style_id || null, 1]
         );
 
         // Update stock quantity
@@ -181,31 +264,31 @@ const salesService = {
         }
       }
 
-      if (customer_id) {
-        if (payment_status === 'DEBT') {
+      if (finalCustomerId) {
+        if (finalPaymentStatus === 'DEBT') {
           await connection.execute(
             'UPDATE customers SET balance = balance + ? WHERE id = ? AND status = 1',
-            [totalAmount, customer_id]
+            [totalAmount, finalCustomerId]
           );
 
           await connection.execute(
             'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-            [customer_id, saleId, totalAmount, 'DEBT', 1]
+            [finalCustomerId, saleId, totalAmount, 'DEBT', 1]
           );
-        } else if (payment_status === 'PARTIAL') {
+        } else if (finalPaymentStatus === 'PARTIAL') {
           await connection.execute(
             'UPDATE customers SET balance = balance + ? WHERE id = ? AND status = 1',
-            [totalAmount, customer_id]
+            [totalAmount, finalCustomerId]
           );
 
           await connection.execute(
             'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-            [customer_id, saleId, totalAmount, 'PARTIAL', 1]
+            [finalCustomerId, saleId, totalAmount, 'PARTIAL', 1]
           );
         } else {
           await connection.execute(
             'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-            [customer_id, saleId, totalAmount, 'PAID', 1]
+            [finalCustomerId, saleId, totalAmount, 'PAID', 1]
           );
         }
       }
@@ -213,12 +296,14 @@ const salesService = {
       await connection.commit();
       
       // Create transaction for paid and partially paid sales
-      if (payment_status === 'PAID' || payment_status === 'PARTIAL') {
+      if (finalPaymentStatus === 'PAID' || finalPaymentStatus === 'PARTIAL') {
         await accountsService.createSaleTransaction({
           id: saleId,
           total_amount: totalAmount,
-          payment_status,
-          account_id
+          cash_amount: finalCashAmount,
+          electronic_amount: finalElectronicAmount,
+          payment_status: finalPaymentStatus,
+          account_id: primaryAccountId
         });
       }
       
@@ -400,23 +485,48 @@ const salesService = {
           const productType = productRows[0]?.type || 'simple';
 
           if (productType === 'batch') {
-            // For batch products, stock_item_id is required
-            if (!item.stock_item_id) {
+            // For batch products, check if stock_items exist for this product
+            const [existingBatches] = await connection.execute(
+              'SELECT id, quantity FROM stock_items WHERE product_id = ? AND status = 1',
+              [item.product_id]
+            );
+
+          let stockItemId = item.stock_item_id;
+
+          // If no batches exist, create one with current stock quantity
+          if (existingBatches.length === 0) {
+            // Get current stock from main stock table
+            const [stockRows] = await connection.execute(
+              'SELECT quantity FROM stock WHERE product_id = ?',
+              [item.product_id]
+            );
+            const currentStock = stockRows.length > 0 ? parseFloat(stockRows[0].quantity) : 0;
+
+            // Create new batch
+            const batchCode = `AUTO-BATCH-${item.product_id}-${Date.now()}`;
+            const [batchResult] = await connection.execute(
+              'INSERT INTO stock_items (product_id, quantity, batch_code, purchase_cost, selling_price, status) VALUES (?, ?, ?, ?, ?, ?)',
+              [item.product_id, currentStock, batchCode, null, null, 1]
+            );
+            stockItemId = batchResult.insertId;
+          } else {
+            // If batches exist, stock_item_id is required
+            if (!stockItemId) {
               await connection.rollback();
               connection.release();
-              return { error: `Stock item (batch) is required for batch product ${item.product_id}` };
+              return { error: `Stock item (batch) is required for batch product ${item.product_id}. Available batches: ${existingBatches.length}` };
             }
 
             // Check specific batch quantity
             const [stockItemRows] = await connection.execute(
               'SELECT quantity FROM stock_items WHERE id = ? AND product_id = ? AND status = 1',
-              [item.stock_item_id, item.product_id]
+              [stockItemId, item.product_id]
             );
 
             if (stockItemRows.length === 0) {
               await connection.rollback();
               connection.release();
-              return { error: `Stock item ${item.stock_item_id} not found for product ${item.product_id}` };
+              return { error: `Stock item ${stockItemId} not found for product ${item.product_id}` };
             }
 
             const batchAvailable = parseFloat(stockItemRows[0].quantity);
@@ -425,19 +535,23 @@ const salesService = {
               connection.release();
               return { error: `Insufficient batch stock for product ${item.product_id}. Available: ${batchAvailable}, Required: ${item.quantity}` };
             }
-          } else {
-            // For simple products, check total stock
-            const [stockRows] = await connection.execute(
-              'SELECT quantity FROM stock WHERE product_id = ?',
-              [item.product_id]
-            );
-            const available = stockRows.length > 0 ? parseFloat(stockRows[0].quantity) : 0;
-            if (available < item.quantity) {
-              await connection.rollback();
-              connection.release();
-              return { error: `Insufficient stock for product ${item.product_id}` };
-            }
           }
+
+          // Store the stock_item_id for later use
+          item.stock_item_id = stockItemId;
+        } else {
+          // For simple products, check total stock
+          const [stockRows] = await connection.execute(
+            'SELECT quantity FROM stock WHERE product_id = ?',
+            [item.product_id]
+          );
+          const available = stockRows.length > 0 ? parseFloat(stockRows[0].quantity) : 0;
+          if (available < item.quantity) {
+            await connection.rollback();
+            connection.release();
+            return { error: `Insufficient stock for product ${item.product_id}` };
+          }
+        }
         }
 
         // Add new items and update stock

@@ -11,6 +11,18 @@ const expenseService = {
     `;
     const params = [];
 
+    // Add type filter
+    if (filters.type) {
+      query += ' AND e.type = ?';
+      params.push(filters.type);
+    }
+
+    // Add created_by filter
+    if (filters.created_by) {
+      query += ' AND e.created_by = ?';
+      params.push(filters.created_by);
+    }
+
     // Add date filter
     if (filters.date) {
       query += ' AND e.expense_date = ?';
@@ -50,19 +62,23 @@ const expenseService = {
     return rows[0];
   },
 
-  create: async ({ description, account_id, amount, expense_date, created_by }) => {
+  create: async ({ description, account_id, amount, expense_date, type, created_by }) => {
     const connection = await db.getConnection();
 
     try {
       await connection.beginTransaction();
 
-      if (!description || !amount || amount <= 0 || !expense_date) {
-        return { error: 'Description, positive amount and expense date are required' };
+      if (!description || !amount || amount <= 0 || !expense_date || !type) {
+        return { error: 'Description, positive amount, expense date and type are required' };
+      }
+
+      if (!['shop', 'personal'].includes(type)) {
+        return { error: 'Type must be either "shop" or "personal"' };
       }
 
       const [result] = await connection.execute(
-        'INSERT INTO expenses (description, account_id, amount, expense_date, created_by, status) VALUES (?, ?, ?, ?, ?, ?)',
-        [description, account_id, amount, expense_date, created_by, 1]
+        'INSERT INTO expenses (description, account_id, amount, expense_date, type, created_by, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [description, account_id, amount, expense_date, type, created_by, 1]
       );
 
       await connection.commit();
@@ -79,6 +95,7 @@ const expenseService = {
         description, 
         amount: amount.toString(), 
         expense_date,
+        type,
         created_by 
       };
     } catch (error) {
@@ -89,7 +106,7 @@ const expenseService = {
     }
   },
 
-  update: async (id, { description, amount, expense_date }) => {
+  update: async (id, { description, amount, expense_date, type }) => {
     const connection = await db.getConnection();
 
     try {
@@ -122,6 +139,15 @@ const expenseService = {
       if (expense_date !== undefined) {
         updates.push('expense_date = ?');
         values.push(expense_date);
+      }
+      if (type !== undefined) {
+        if (!['shop', 'personal'].includes(type)) {
+          await connection.rollback();
+          connection.release();
+          return { error: 'Type must be either "shop" or "personal"' };
+        }
+        updates.push('type = ?');
+        values.push(type);
       }
 
       if (updates.length === 0) {

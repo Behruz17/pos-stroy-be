@@ -76,6 +76,38 @@ const customerController = {
       console.error('Delete customer error:', error);
       res.status(500).json({ error: 'Server error' });
     }
+  },
+
+  getDefault: async (req, res) => {
+    try {
+      const customer = await customerService.getDefaultCustomer();
+
+      if (customer.error) {
+        return res.status(404).json({ error: customer.error });
+      }
+
+      res.json(customer);
+    } catch (error) {
+      console.error('Get default customer error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  },
+
+  setDefault: async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const customer = await customerService.setDefaultCustomer(id);
+
+      if (customer.error) {
+        return res.status(404).json({ error: customer.error });
+      }
+
+      res.json(customer);
+    } catch (error) {
+      console.error('Set default customer error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
   }
 };
 

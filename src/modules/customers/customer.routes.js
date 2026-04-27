@@ -8,5 +8,7 @@ router.get('/:id', authMiddleware, customerController.getById);
 router.post('/', authMiddleware, customerController.create);
 router.put('/:id', authMiddleware, customerController.update);
 router.delete('/:id', authMiddleware, customerController.remove);
+router.get('/default/current', authMiddleware, customerController.getDefault);
+router.put('/:id/default', authMiddleware, customerController.setDefault);
 
 module.exports = router;

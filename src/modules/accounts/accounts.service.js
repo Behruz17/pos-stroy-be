@@ -128,18 +128,55 @@ const accountsService = {
 
   // Create transactions for sales
   createSaleTransaction: async (saleData) => {
-    const { id, total_amount, payment_status, account_id } = saleData;
+    const { id, total_amount, cash_amount, electronic_amount, payment_status, account_id } = saleData;
     
-    if (payment_status === 'PAID') {
-      return await accountsService.createTransaction({
-        account_id: account_id || 1, // Use provided account_id or default to cash
-        type: 'INCOME',
-        amount: total_amount,
-        reference_type: 'SALE',
-        reference_id: id,
-        description: `Продажа #${id}`
-      });
+    if (payment_status === 'PAID' || payment_status === 'PARTIAL') {
+      const connection = await db.getConnection();
+      
+      try {
+        await connection.beginTransaction();
+        
+        // Create transaction for cash amount if > 0
+        if (cash_amount && cash_amount > 0) {
+          await connection.execute(
+            'INSERT INTO transactions (account_id, type, amount, reference_type, reference_id, description, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+            [1, 'INCOME', cash_amount, 'SALE', id, `Продажа #${id} (наличные)`, 1]
+          );
+        }
+        
+        // Create transaction for electronic amount if > 0
+        if (electronic_amount && electronic_amount > 0) {
+          await connection.execute(
+            'INSERT INTO transactions (account_id, type, amount, reference_type, reference_id, description, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+            [2, 'INCOME', electronic_amount, 'SALE', id, `Продажа #${id} (электронно)`, 1]
+          );
+        }
+        
+        // Update account balances
+        if (cash_amount && cash_amount > 0) {
+          await connection.execute(
+            'UPDATE accounts SET balance = balance + ? WHERE id = ? AND status = 1',
+            [cash_amount, 1]
+          );
+        }
+        
+        if (electronic_amount && electronic_amount > 0) {
+          await connection.execute(
+            'UPDATE accounts SET balance = balance + ? WHERE id = ? AND status = 1',
+            [electronic_amount, 2]
+          );
+        }
+        
+        await connection.commit();
+        return { success: true };
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
     }
+    
     return { success: true };
   },
 

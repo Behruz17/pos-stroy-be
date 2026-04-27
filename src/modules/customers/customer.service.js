@@ -64,6 +64,57 @@ const customerService = {
     }
 
     return { success: true };
+  },
+
+  getDefaultCustomer: async () => {
+    const [rows] = await db.execute(
+      'SELECT id, full_name, phone, balance, created_at, updated_at, status FROM customers WHERE is_default = 1 AND status = 1 LIMIT 1'
+    );
+
+    if (rows.length === 0) {
+      return { error: 'Default customer not found' };
+    }
+
+    return rows[0];
+  },
+
+  setDefaultCustomer: async (id) => {
+    const connection = await db.getConnection();
+
+    try {
+      await connection.beginTransaction();
+
+      // Сначала сбросить все флаги is_default
+      await connection.execute(
+        'UPDATE customers SET is_default = 0 WHERE status = 1'
+      );
+
+      // Установить новый клиент по умолчанию
+      const [result] = await connection.execute(
+        'UPDATE customers SET is_default = 1 WHERE id = ? AND status = 1',
+        [id]
+      );
+
+      if (result.affectedRows === 0) {
+        await connection.rollback();
+        connection.release();
+        return { error: 'Customer not found' };
+      }
+
+      await connection.commit();
+      connection.release();
+
+      const [defaultCustomer] = await db.execute(
+        'SELECT id, full_name, phone, balance, created_at, updated_at, status FROM customers WHERE id = ? AND status = 1',
+        [id]
+      );
+
+      return defaultCustomer[0];
+    } catch (error) {
+      await connection.rollback();
+      connection.release();
+      throw error;
+    }
   }
 };
 

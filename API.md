@@ -1905,6 +1905,48 @@ GET /api/sales?month=4&year=2026
 GET /api/sales?year=2026
 ```
 
+**Примеры смешанной оплаты:**
+
+Полностью оплачено наличными:
+```json
+{
+  "customer_id": 2,
+  "cash_amount": 500.00,
+  "electronic_amount": 0,
+  "items": [...]
+}
+```
+
+Полностью оплачено электронно:
+```json
+{
+  "customer_id": 2,
+  "cash_amount": 0,
+  "electronic_amount": 500.00,
+  "items": [...]
+}
+```
+
+Смешанная оплата (частично наличными, частично электронно):
+```json
+{
+  "customer_id": 2,
+  "cash_amount": 300.00,
+  "electronic_amount": 200.00,
+  "items": [...]
+}
+```
+
+Частичная оплата (долг остается):
+```json
+{
+  "customer_id": 2,
+  "cash_amount": 200.00,
+  "electronic_amount": 100.00,
+  "items": [...]
+}
+```
+
 **Response (200):**
 ```json
 [
@@ -1913,8 +1955,9 @@ GET /api/sales?year=2026
     "customer_id": 2,
     "customer_name": "Иванов Иван",
     "total_amount": 500.00,
-    "paid_amount": 0.00,
-    "payment_status": "DEBT",
+    "cash_amount": 300.00,
+    "electronic_amount": 200.00,
+    "payment_status": "PAID",
     "stage": "ordered",
     "created_by": 1,
     "created_at": "2026-04-05T10:00:00.000Z"
@@ -1944,8 +1987,9 @@ Authorization: Bearer <token>
   "customer_id": 2,
   "customer_name": "Иванов Иван",
   "total_amount": 500.00,
-  "paid_amount": 0.00,
-  "payment_status": "DEBT",
+  "cash_amount": 300.00,
+  "electronic_amount": 200.00,
+  "payment_status": "PAID",
   "stage": "ordered",
   "debt_deadline": "2026-05-15T23:59:59.000Z",
   "created_by": 1,
@@ -1958,7 +2002,9 @@ Authorization: Bearer <token>
       "product_code": "CEM-500",
       "quantity": 10,
       "unit_price": 50.00,
-      "total_price": 500.00
+      "total_price": 500.00,
+      "style_id": 2,
+      "style_name": "волна"
     },
     {
       "id": 2,
@@ -1968,7 +2014,9 @@ Authorization: Bearer <token>
       "product_code": "STEEL-05",
       "quantity": 50,
       "unit_price": 65.00,
-      "total_price": 3250.00
+      "total_price": 3250.00,
+      "style_id": 3,
+      "style_name": "2 таксим"
     }
   ]
 }
@@ -2059,8 +2107,9 @@ Authorization: Bearer <token>
 ```json
 {
   "customer_id": 2,
-  "payment_status": "DEBT",
-  "paid_amount": 0,
+  "payment_status": "PARTIAL",
+  "cash_amount": 300.00,
+  "electronic_amount": 200.00,
   "stage": "ordered",
   "account_id": 1,
   "debt_deadline": "2026-05-15T23:59:59.000Z",
@@ -2069,29 +2118,40 @@ Authorization: Bearer <token>
       "product_id": 5,
       "quantity": 3,
       "unit_price": 50.00,
-      "unit_value": 2.5
+      "unit_value": 2.5,
+      "style_id": 2
     },
     {
       "product_id": 6,
       "quantity": 10,
-      "unit_price": 30.00
+      "unit_price": 30.00,
+      "style_id": 1
     },
     {
       "product_id": 100,
       "stock_item_id": 5,
       "quantity": 50,
-      "unit_price": 65.00
+      "unit_price": 65.00,
+      "style_id": 3
     }
   ]
 }
 ```
 
 **Notes:**
-- `account_id` - ID счета (1=Наличные, 2=Банковская карта, опционально)
-- `account_id` используется только для payment_status = "PAID"
-- По умолчанию используется счет 1 (Наличные)
 - `stage` - Этап продажи: `ordered` (по умолчанию), `ready`, `delivered`
-- `paid_amount` - Сумма частичной оплаты (только для `PARTIAL`)
+- `cash_amount` - Сумма оплаты наличными (опционально). Поступает на счет 1 (Наличные)
+- `electronic_amount` - Сумма оплаты электронно (опционально). Поступает на счет 2 (Банковская карта)
+- `account_id` - Основной счет для отчетности (опционально). Если не указан, определяется автоматически:
+  - Если `cash_amount >= electronic_amount` → `account_id = 1` (наличные)
+  - Если `electronic_amount > cash_amount` → `account_id = 2` (электронно)
+  - При `payment_status = DEBT` → `account_id = NULL`
+- **Важно:** При смешанной оплате деньги поступают на ОБА счета независимо от `account_id`. `account_id` используется только для отчетности.
+- `payment_status` рассчитывается автоматически на основе `cash_amount + electronic_amount`:
+  - `PAID` если сумма оплат >= total_amount
+  - `PARTIAL` если 0 < сумма оплат < total_amount  
+  - `DEBT` если сумма оплат = 0
+- `style_id` - ID стиля товара (опционально). Получить из `/api/styles`. Например: 1 (гладкий), 2 (волна), 3 (2 таксим)
 - `stock_item_id` - **Обязательно для batch товаров**. ID партии из `/products/:id/stock-items`
 - Для simple товаров `stock_item_id` не указывается
 
@@ -2124,11 +2184,14 @@ Authorization: Bearer <token>
 - `400` — Поле items обязательно
 - `400` — Каждый item должен иметь product_id, quantity > 0 и unit_price
 - `400` — unit_value должен быть положительным числом
+- `400` — style_id должен быть положительным целым числом
 - `400` — debt_deadline должен быть валидной датой
 - `400` — Недостаточно остатков на складе
 - `400` — Для batch товара обязательно указание stock_item_id
 - `400` — Партия не найдена для batch товара
 - `400` — Недостаточно остатков в партии для batch товара
+- `400` — Суммы оплаты не могут быть отрицательными
+- `400` — Общая сумма оплаты не может превышать сумму продажи
 
 ---
 
@@ -3081,6 +3144,8 @@ Authorization: Bearer <token>
 - `date` - Фильтр по конкретной дате (формат: `YYYY-MM-DD`), например `2026-04-05`
 - `month` - Фильтр по месяцу (1-12), требует указания `year`
 - `year` - Фильтр по году (например, `2026`)
+- `type` - Фильтр по типу расхода (`shop` или `personal`)
+- `created_by` - Фильтр по ID пользователя, создавшего расход
 **Examples:**
 
 Все расходы:
@@ -3103,6 +3168,26 @@ GET /api/expenses?month=4&year=2026
 GET /api/expenses?year=2026
 ```
 
+Только расходы для магазина:
+```
+GET /api/expenses?type=shop
+```
+
+Только личные расходы:
+```
+GET /api/expenses?type=personal
+```
+
+Расходы конкретного пользователя:
+```
+GET /api/expenses?created_by=1
+```
+
+Комбинированная фильтрация (личные расходы пользователя за апрель 2026):
+```
+GET /api/expenses?type=personal&created_by=1&month=4&year=2026
+```
+
 **Response (200):**
 ```json
 [
@@ -3111,9 +3196,20 @@ GET /api/expenses?year=2026
     "description": "Закупка канцелярии",
     "amount": 150.00,
     "expense_date": "2026-04-05",
+    "type": "shop",
     "created_by": 1,
     "created_by_name": "Admin User",
     "created_at": "2026-04-05T10:00:00.000Z"
+  },
+  {
+    "id": 2,
+    "description": "Обед",
+    "amount": 30.00,
+    "expense_date": "2026-04-06",
+    "type": "personal",
+    "created_by": 1,
+    "created_by_name": "Admin User",
+    "created_at": "2026-04-06T12:00:00.000Z"
   }
 ]
 ```
@@ -3136,6 +3232,7 @@ Authorization: Bearer <token>
   "description": "Закупка канцелярии",
   "amount": 150.00,
   "expense_date": "2026-04-05",
+  "type": "shop",
   "created_by": 1,
   "created_by_name": "Admin User",
   "created_at": "2026-04-05T10:00:00.000Z"
@@ -3162,12 +3259,14 @@ Authorization: Bearer <token>
   "description": "Закупка канцелярии",
   "account_id": 1,
   "amount": 150.00,
-  "expense_date": "2026-04-05"
+  "expense_date": "2026-04-05",
+  "type": "shop"
 }
 ```
 
 **Notes:**
 - `account_id` - ID счета (1=Наличные, 2=Банковская карта, опционально)
+- `type` - Тип расхода: `shop` (для магазина) или `personal` (личный), обязательно
 - По умолчанию используется счет 1 (Наличные)
 
 **Response (201):**
@@ -3177,13 +3276,15 @@ Authorization: Bearer <token>
   "description": "Закупка канцелярии",
   "amount": "150.00",
   "expense_date": "2026-04-05",
+  "type": "shop",
   "created_by": 1
 }
 ```
 
 **Errors:**
-- `400` — Описание, положительная сумма и дата обязательны
+- `400` — Описание, положительная сумма, дата и тип обязательны
 - `400` — Неверный формат даты (используйте YYYY-MM-DD)
+- `400` — Тип должен быть либо "shop", либо "personal"
 
 ---
 
@@ -3201,7 +3302,8 @@ Authorization: Bearer <token>
 {
   "description": "Обновленное описание",
   "amount": 200.00,
-  "expense_date": "2026-04-06"
+  "expense_date": "2026-04-06",
+  "type": "personal"
 }
 ```
 
@@ -3215,6 +3317,7 @@ Authorization: Bearer <token>
 **Errors:**
 - `400` — Сумма должна быть положительной
 - `400` — Неверный формат даты
+- `400` — Тип должен быть либо "shop", либо "personal"
 - `404` — Расход не найден
 
 ---
@@ -3332,6 +3435,168 @@ Authorization: Bearer <token>
 **Errors:**
 - `404` — Оплата не найдена
 - `400` — Можно удалять только операции типа PAYMENT
+
+---
+
+## Styles Endpoints
+
+### GET `/styles`
+
+Получение списка всех активных стилей.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+[
+  {
+    "id": 1,
+    "name": "гладкий",
+    "description": "Гладкая поверхность",
+    "status": 1,
+    "created_at": "2026-04-26T10:00:00.000Z",
+    "updated_at": "2026-04-26T10:00:00.000Z"
+  },
+  {
+    "id": 2,
+    "name": "волна",
+    "description": "Волновая текстура",
+    "status": 1,
+    "created_at": "2026-04-26T10:00:00.000Z",
+    "updated_at": "2026-04-26T10:00:00.000Z"
+  },
+  {
+    "id": 3,
+    "name": "2 таксим",
+    "description": "Двусторонняя текстура",
+    "status": 1,
+    "created_at": "2026-04-26T10:00:00.000Z",
+    "updated_at": "2026-04-26T10:00:00.000Z"
+  }
+]
+```
+
+---
+
+### GET `/styles/:id`
+
+Получение стиля по ID.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "name": "гладкий",
+  "description": "Гладкая поверхность",
+  "status": 1,
+  "created_at": "2026-04-26T10:00:00.000Z",
+  "updated_at": "2026-04-26T10:00:00.000Z"
+}
+```
+
+**Errors:**
+- `404` — Стиль не найден
+
+---
+
+### POST `/styles`
+
+Создание нового стиля.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "name": "3 таксим",
+  "description": "Трехсторонняя текстура"
+}
+```
+
+**Response (201):**
+```json
+{
+  "id": 4,
+  "name": "3 таксим",
+  "description": "Трехсторонняя текстура"
+}
+```
+
+**Errors:**
+- `400` — Name обязателен
+- `400` — Name не может быть пустым
+- `400` — Name должен быть менее 100 символов
+- `400` — Description должен быть менее 500 символов
+- `400` — Стиль с таким именем уже существует
+
+---
+
+### PUT `/styles/:id`
+
+Обновление стиля.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "name": "3 таксим обновленный",
+  "description": "Обновленное описание"
+}
+```
+
+**Response (200):**
+```json
+{
+  "message": "Style updated successfully"
+}
+```
+
+**Errors:**
+- `404` — Стиль не найден
+- `400` — Name не может быть пустым
+- `400` — Name должен быть менее 100 символов
+- `400` — Description должен быть менее 500 символов
+- `400` — Стиль с таким именем уже существует
+
+---
+
+### DELETE `/styles/:id`
+
+Удаление стиля (soft delete).
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "message": "Style deleted successfully"
+}
+```
+
+**Логика:**
+- Стиль помечается как неактивный (status = 0)
+- Существующие записи в sale_items с этим style_id остаются (foreign key ON DELETE SET NULL)
+
+**Errors:**
+- `404` — Стиль не найден
 
 ---
 

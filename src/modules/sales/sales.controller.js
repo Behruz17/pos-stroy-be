@@ -33,12 +33,20 @@ const salesController = {
 
   create: async (req, res) => {
     try {
-      const { customer_id, payment_status, paid_amount, stage, account_id, debt_deadline, items } = req.body;
+      const { customer_id, payment_status, cash_amount, electronic_amount, stage, account_id, debt_deadline, items } = req.body;
 
       // Validate payment_status
       const validPaymentStatuses = ['DEBT', 'PARTIAL', 'PAID'];
       if (payment_status && !validPaymentStatuses.includes(payment_status)) {
         return res.status(400).json({ error: `payment_status must be one of: ${validPaymentStatuses.join(', ')}` });
+      }
+
+      // Validate mixed payment amounts
+      if (cash_amount !== undefined && electronic_amount !== undefined) {
+        const totalPaid = parseFloat(cash_amount) + parseFloat(electronic_amount);
+        if (isNaN(totalPaid) || totalPaid < 0) {
+          return res.status(400).json({ error: 'Payment amounts must be non-negative numbers' });
+        }
       }
 
       if (!items || !Array.isArray(items) || items.length === 0) {
@@ -51,6 +59,9 @@ const salesController = {
         }
         if (item.unit_value !== undefined && (typeof item.unit_value !== 'number' || item.unit_value <= 0)) {
           return res.status(400).json({ error: 'unit_value must be a positive number' });
+        }
+        if (item.style_id !== undefined && (!Number.isInteger(item.style_id) || item.style_id <= 0)) {
+          return res.status(400).json({ error: 'style_id must be a positive integer' });
         }
       }
 
@@ -69,7 +80,8 @@ const salesController = {
         created_by: req.user.id,
         customer_id,
         payment_status,
-        paid_amount,
+        cash_amount,
+        electronic_amount,
         stage,
         account_id,
         debt_deadline,
