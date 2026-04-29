@@ -29,7 +29,7 @@ const productController = {
 
   create: async (req, res) => {
     try {
-      const { name, manufacturer, notification_threshold, product_code } = req.body;
+      const { name, manufacturer, notification_threshold, product_code, type } = req.body;
       const image = req.file ? `/uploads/products/${req.file.filename}` : null;
 
       if (!name) {
@@ -41,7 +41,8 @@ const productController = {
         manufacturer,
         image,
         notification_threshold,
-        product_code
+        product_code,
+        type
       });
 
       if (product.error) {

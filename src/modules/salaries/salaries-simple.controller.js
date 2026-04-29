@@ -3,10 +3,10 @@ const salariesSimpleService = require('./salaries-simple.service');
 const salariesSimpleController = {
   create: async (req, res) => {
     try {
-      const { user_id, month, year, total_amount } = req.body;
+      const { employee_id, month, year, total_amount } = req.body;
 
-      if (!user_id || !month || !year || !total_amount) {
-        return res.status(400).json({ error: 'user_id, month, year, and total_amount are required' });
+      if (!employee_id || !month || !year || !total_amount) {
+        return res.status(400).json({ error: 'employee_id, month, year, and total_amount are required' });
       }
 
       if (month < 1 || month > 12) {
@@ -18,7 +18,7 @@ const salariesSimpleController = {
       }
 
       const result = await salariesSimpleService.create({
-        user_id: parseInt(user_id),
+        employee_id: parseInt(employee_id),
         month: parseInt(month),
         year: parseInt(year),
         total_amount: parseFloat(total_amount)
@@ -66,6 +66,17 @@ const salariesSimpleController = {
     }
   },
 
+  getAllEmployeesWithHistory: async (req, res) => {
+    try {
+      const employees = await salariesSimpleService.getAllEmployeesWithHistory();
+      res.json(employees);
+    } catch (error) {
+      console.error('Get employees with history error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  },
+
+  // Оставляем для обратной совместимости
   getAllUsersWithHistory: async (req, res) => {
     try {
       const users = await salariesSimpleService.getAllUsersWithHistory();

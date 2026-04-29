@@ -2,28 +2,28 @@ const db = require('../../config/db');
 const accountsService = require('../accounts/accounts.service');
 
 const salariesSimpleService = {
-  // Create salary for user
-  create: async ({ user_id, month, year, total_amount }) => {
+  // Create salary for employee
+  create: async ({ employee_id, month, year, total_amount }) => {
     const connection = await db.getConnection();
 
     try {
       await connection.beginTransaction();
 
-      // Check if salary already exists for this user, month, and year
+      // Check if salary already exists for this employee, month, and year
       const [existing] = await connection.execute(
-        'SELECT id FROM salaries WHERE user_id = ? AND month = ? AND year = ? AND status = 1',
-        [user_id, month, year]
+        'SELECT id FROM salaries WHERE employee_id = ? AND month = ? AND year = ? AND status = 1',
+        [employee_id, month, year]
       );
 
       if (existing.length > 0) {
         await connection.rollback();
         connection.release();
-        return { error: 'Salary already exists for this user, month, and year' };
+        return { error: 'Salary already exists for this employee, month, and year' };
       }
 
       const [result] = await connection.execute(
-        'INSERT INTO salaries (user_id, month, year, total_amount, status) VALUES (?, ?, ?, ?, ?)',
-        [user_id, month, year, total_amount, 1]
+        'INSERT INTO salaries (employee_id, month, year, total_amount, status) VALUES (?, ?, ?, ?, ?)',
+        [employee_id, month, year, total_amount, 1]
       );
 
       await connection.commit();
@@ -79,20 +79,19 @@ const salariesSimpleService = {
     }
   },
 
-  // Get all users with their salary history and remaining amounts
-  getAllUsersWithHistory: async () => {
-    const [users] = await db.execute(`
-      SELECT DISTINCT
-        u.id as user_id,
-        u.name as user_name,
-        u.login
-      FROM users u
-      WHERE u.status = 1
-      ORDER BY u.name ASC
+  // Get all employees with their salary history and remaining amounts
+  getAllEmployeesWithHistory: async () => {
+    const [employees] = await db.execute(`
+      SELECT 
+        e.id as employee_id,
+        e.full_name as employee_name
+      FROM employees e
+      WHERE e.status = 1
+      ORDER BY e.full_name ASC
     `);
 
-    // Get salary history for each user
-    for (const user of users) {
+    // Get salary history for each employee
+    for (const employee of employees) {
       const [salaries] = await db.execute(`
         SELECT 
           s.id as salary_id,
@@ -104,10 +103,10 @@ const salariesSimpleService = {
           s.created_at
         FROM salaries s
         LEFT JOIN salary_payments sp ON s.id = sp.salary_id AND sp.status = 1
-        WHERE s.user_id = ? AND s.status = 1
+        WHERE s.employee_id = ? AND s.status = 1
         GROUP BY s.id, s.month, s.year, s.total_amount, s.created_at
         ORDER BY s.year DESC, s.month DESC
-      `, [user.user_id]);
+      `, [employee.employee_id]);
 
       // Get payment details for each salary
       for (const salary of salaries) {
@@ -122,13 +121,18 @@ const salariesSimpleService = {
         salary.payments = payments;
       }
 
-      user.salaries = salaries;
+      employee.salaries = salaries;
       
       // Calculate total remaining amount
-      user.total_remaining = salaries.reduce((sum, salary) => sum + parseFloat(salary.remaining_amount), 0);
+      employee.total_remaining = salaries.reduce((sum, salary) => sum + parseFloat(salary.remaining_amount), 0);
     }
 
-    return users;
+    return employees;
+  },
+
+  // Оставляем для обратной совместимости
+  getAllUsersWithHistory: async () => {
+    return await salariesSimpleService.getAllEmployeesWithHistory();
   }
 };
 

@@ -236,17 +236,18 @@ const salesService = {
           [saleId, item.product_id, productType === 'batch' ? item.stock_item_id : null, item.quantity, item.unit_price, unitValue, itemTotal, item.style_id || null, 1]
         );
 
-        // Update stock quantity
+        // Update stock quantity (real quantity = quantity * unit_value)
+        const realQuantity = item.quantity * (item.unit_value || 1);
         await connection.execute(
           'UPDATE stock SET quantity = quantity - ? WHERE product_id = ?',
-          [item.quantity, item.product_id]
+          [realQuantity, item.product_id]
         );
 
         // For batch products: update specific batch quantity
         if (productType === 'batch' && item.stock_item_id) {
           await connection.execute(
             'UPDATE stock_items SET quantity = quantity - ? WHERE id = ? AND product_id = ?',
-            [item.quantity, item.stock_item_id, item.product_id]
+            [realQuantity, item.stock_item_id, item.product_id]
           );
 
           // Check if batch quantity is now 0 and deactivate if so
@@ -452,17 +453,18 @@ const salesService = {
       if (items && items.length > 0) {
         // Restore stock for old items (handle batch products)
         for (const item of existingItems) {
-          // Restore main stock
+          // Restore main stock (real quantity = quantity * unit_value)
+          const realQuantity = item.quantity * (item.unit_value || 1);
           await connection.execute(
             'UPDATE stock SET quantity = quantity + ? WHERE product_id = ?',
-            [item.quantity, item.product_id]
+            [realQuantity, item.product_id]
           );
 
           // If batch product, restore specific batch quantity
           if (item.stock_item_id) {
             await connection.execute(
               'UPDATE stock_items SET quantity = quantity + ? WHERE id = ? AND product_id = ?',
-              [item.quantity, item.stock_item_id, item.product_id]
+              [realQuantity, item.stock_item_id, item.product_id]
             );
             // Reactivate batch if it was deactivated
             await connection.execute(
@@ -572,17 +574,18 @@ const salesService = {
             [id, item.product_id, productType === 'batch' ? item.stock_item_id : null, item.quantity, item.unit_price, unitValue, itemTotal, 1]
           );
 
-          // Update stock quantity
+          // Update stock quantity (real quantity = quantity * unit_value)
+          const realQuantity = item.quantity * (item.unit_value || 1);
           await connection.execute(
             'UPDATE stock SET quantity = quantity - ? WHERE product_id = ?',
-            [item.quantity, item.product_id]
+            [realQuantity, item.product_id]
           );
 
           // For batch products: update specific batch quantity
           if (productType === 'batch' && item.stock_item_id) {
             await connection.execute(
               'UPDATE stock_items SET quantity = quantity - ? WHERE id = ? AND product_id = ?',
-              [item.quantity, item.stock_item_id, item.product_id]
+              [realQuantity, item.stock_item_id, item.product_id]
             );
 
             // Check if batch quantity is now 0 and deactivate if so
@@ -654,22 +657,23 @@ const salesService = {
       const { customer_id, total_amount, payment_status } = saleRows[0];
 
       const [itemRows] = await connection.execute(
-        'SELECT product_id, quantity, stock_item_id FROM sale_items WHERE sale_id = ? AND status = 1',
+        'SELECT product_id, quantity, unit_value, stock_item_id FROM sale_items WHERE sale_id = ? AND status = 1',
         [id]
       );
 
       for (const item of itemRows) {
-        // Restore main stock
+        // Restore main stock (real quantity = quantity * unit_value)
+        const realQuantity = item.quantity * (item.unit_value || 1);
         await connection.execute(
           'UPDATE stock SET quantity = quantity + ? WHERE product_id = ?',
-          [item.quantity, item.product_id]
+          [realQuantity, item.product_id]
         );
 
         // If batch product, restore specific batch quantity
         if (item.stock_item_id) {
           await connection.execute(
             'UPDATE stock_items SET quantity = quantity + ? WHERE id = ? AND product_id = ?',
-            [item.quantity, item.stock_item_id, item.product_id]
+            [realQuantity, item.stock_item_id, item.product_id]
           );
           // Reactivate batch if it was deactivated
           await connection.execute(

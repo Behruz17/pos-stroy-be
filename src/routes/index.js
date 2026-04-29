@@ -22,6 +22,7 @@ const conversionsRoutes = require('../modules/conversions/conversions.routes');
 const exchangeRatesRoutes = require('../modules/exchange_rates/exchange_rates.routes');
 const styleRoutes = require('../modules/styles/style.routes');
 const stockAdjustmentRoutes = require('../modules/stock_adjustments/stock_adjustment.routes');
+const employeeRoutes = require('../modules/employees/employee.routes');
 
 const router = express.Router();
 
@@ -48,5 +49,6 @@ router.use('/conversions', conversionsRoutes);
 router.use('/exchange-rates', exchangeRatesRoutes);
 router.use('/styles', styleRoutes);
 router.use('/stock-adjustments', stockAdjustmentRoutes);
+router.use('/employees', employeeRoutes);
 
 module.exports = router;

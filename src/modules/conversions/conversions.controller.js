@@ -33,7 +33,7 @@ const conversionsController = {
   // Create new conversion
   create: async (req, res) => {
     try {
-      const { from_product_id, to_product_id, from_quantity, to_quantity, selling_price } = req.body;
+      const { from_product_id, to_product_id, from_quantity, to_quantity, selling_price, from_stock_item_id } = req.body;
       const created_by = req.user.id;
 
       // Validation
@@ -56,6 +56,7 @@ const conversionsController = {
       const result = await conversionsService.create({
         created_by,
         from_product_id,
+        from_stock_item_id,
         to_product_id,
         from_quantity,
         to_quantity,

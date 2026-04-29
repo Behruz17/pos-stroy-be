@@ -4,17 +4,29 @@ const accountsService = require('../accounts/accounts.service');
 const expenseService = {
   getAll: async (filters = {}) => {
     let query = `
-      SELECT e.*, u.name as created_by_name
+      SELECT e.*, u.name as created_by_name, er.name as recipient_name, er.display_name
       FROM expenses e
       LEFT JOIN users u ON e.created_by = u.id
+      LEFT JOIN (
+        SELECT 
+          er.id,
+          er.name,
+          CASE 
+            WHEN er.type = 'employee' THEN emp.full_name
+            ELSE er.name
+          END as display_name
+        FROM expense_recipients er
+        LEFT JOIN employees emp ON er.type = 'employee' AND er.reference_id = emp.id AND emp.status = 1
+        WHERE er.status = 1
+      ) er ON e.recipient_id = er.id
       WHERE e.status = 1
     `;
     const params = [];
 
-    // Add type filter
-    if (filters.type) {
-      query += ' AND e.type = ?';
-      params.push(filters.type);
+    // Add recipient_id filter
+    if (filters.recipient_id) {
+      query += ' AND e.recipient_id = ?';
+      params.push(filters.recipient_id);
     }
 
     // Add created_by filter
@@ -49,9 +61,21 @@ const expenseService = {
 
   getById: async (id) => {
     const [rows] = await db.execute(`
-      SELECT e.*, u.name as created_by_name
+      SELECT e.*, u.name as created_by_name, er.name as recipient_name, er.display_name
       FROM expenses e
       LEFT JOIN users u ON e.created_by = u.id
+      LEFT JOIN (
+        SELECT 
+          er.id,
+          er.name,
+          CASE 
+            WHEN er.type = 'employee' THEN emp.full_name
+            ELSE er.name
+          END as display_name
+        FROM expense_recipients er
+        LEFT JOIN employees emp ON er.type = 'employee' AND er.reference_id = emp.id AND emp.status = 1
+        WHERE er.status = 1
+      ) er ON e.recipient_id = er.id
       WHERE e.id = ? AND e.status = 1
     `, [id]);
 
@@ -62,23 +86,19 @@ const expenseService = {
     return rows[0];
   },
 
-  create: async ({ description, account_id, amount, expense_date, type, created_by }) => {
+  create: async ({ description, account_id, amount, expense_date, recipient_id, created_by }) => {
     const connection = await db.getConnection();
 
     try {
       await connection.beginTransaction();
 
-      if (!description || !amount || amount <= 0 || !expense_date || !type) {
-        return { error: 'Description, positive amount, expense date and type are required' };
-      }
-
-      if (!['shop', 'personal'].includes(type)) {
-        return { error: 'Type must be either "shop" or "personal"' };
+      if (!description || !amount || amount <= 0 || !expense_date) {
+        return { error: 'Description, positive amount and expense date are required' };
       }
 
       const [result] = await connection.execute(
-        'INSERT INTO expenses (description, account_id, amount, expense_date, type, created_by, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [description, account_id, amount, expense_date, type, created_by, 1]
+        'INSERT INTO expenses (description, account_id, amount, expense_date, recipient_id, created_by, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [description, account_id, amount, expense_date, recipient_id || null, created_by, 1]
       );
 
       await connection.commit();
@@ -95,7 +115,7 @@ const expenseService = {
         description, 
         amount: amount.toString(), 
         expense_date,
-        type,
+        recipient_id,
         created_by 
       };
     } catch (error) {
@@ -106,7 +126,7 @@ const expenseService = {
     }
   },
 
-  update: async (id, { description, amount, expense_date, type }) => {
+  update: async (id, { description, amount, expense_date, recipient_id }) => {
     const connection = await db.getConnection();
 
     try {
@@ -140,14 +160,9 @@ const expenseService = {
         updates.push('expense_date = ?');
         values.push(expense_date);
       }
-      if (type !== undefined) {
-        if (!['shop', 'personal'].includes(type)) {
-          await connection.rollback();
-          connection.release();
-          return { error: 'Type must be either "shop" or "personal"' };
-        }
-        updates.push('type = ?');
-        values.push(type);
+      if (recipient_id !== undefined) {
+        updates.push('recipient_id = ?');
+        values.push(recipient_id);
       }
 
       if (updates.length === 0) {

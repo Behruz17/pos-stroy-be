@@ -24,19 +24,28 @@ const stockAdjustmentController = {
 
   create: async (req, res) => {
     try {
-      const { product_id, new_quantity, reason } = req.body;
+      const { product_id, new_quantity, new_price, reason } = req.body;
 
-      if (!product_id || new_quantity === undefined) {
-        return res.status(400).json({ error: 'product_id and new_quantity are required' });
+      if (!product_id) {
+        return res.status(400).json({ error: 'product_id is required' });
       }
 
-      if (typeof new_quantity !== 'number' || new_quantity < 0) {
+      if (new_quantity !== undefined && (typeof new_quantity !== 'number' || new_quantity < 0)) {
         return res.status(400).json({ error: 'new_quantity must be a non-negative number' });
+      }
+
+      if (new_price !== undefined && (typeof new_price !== 'number' || new_price < 0)) {
+        return res.status(400).json({ error: 'new_price must be a non-negative number' });
+      }
+
+      if (new_quantity === undefined && new_price === undefined) {
+        return res.status(400).json({ error: 'At least one of new_quantity or new_price must be provided' });
       }
 
       const adjustment = await stockAdjustmentService.create({
         product_id,
         new_quantity,
+        new_price,
         reason,
         created_by: req.user.id
       });

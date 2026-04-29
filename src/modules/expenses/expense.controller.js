@@ -3,13 +3,13 @@ const expenseService = require('./expense.service');
 const expenseController = {
   getAll: async (req, res) => {
     try {
-      const { date, month, year, type, created_by } = req.query;
+      const { date, month, year, recipient_id, created_by } = req.query;
       
       const filters = {};
       if (date) filters.date = date;
       if (month) filters.month = parseInt(month);
       if (year) filters.year = parseInt(year);
-      if (type) filters.type = type;
+      if (recipient_id) filters.recipient_id = parseInt(recipient_id);
       
       // USER can only see their own expenses, ADMIN can see all
       if (req.user.role !== 'ADMIN') {
@@ -52,17 +52,11 @@ const expenseController = {
 
   create: async (req, res) => {
     try {
-      const { description, account_id, amount, expense_date, type } = req.body;
+      const { description, account_id, amount, expense_date, recipient_id } = req.body;
 
-      if (!description || !amount || amount <= 0 || !expense_date || !type) {
+      if (!description || !amount || amount <= 0 || !expense_date) {
         return res.status(400).json({ 
-          error: 'Description, positive amount, expense date and type are required' 
-        });
-      }
-
-      if (!['shop', 'personal'].includes(type)) {
-        return res.status(400).json({ 
-          error: 'Type must be either "shop" or "personal"' 
+          error: 'Description, positive amount and expense date are required' 
         });
       }
 
@@ -79,7 +73,7 @@ const expenseController = {
         account_id,
         amount: parseFloat(amount),
         expense_date,
-        type,
+        recipient_id,
         created_by: req.user.id
       });
 
@@ -97,7 +91,7 @@ const expenseController = {
   update: async (req, res) => {
     try {
       const { id } = req.params;
-      const { description, amount, expense_date, type } = req.body;
+      const { description, amount, expense_date, recipient_id } = req.body;
 
       // First get the expense to check ownership
       const expense = await expenseService.getById(id);
@@ -128,18 +122,11 @@ const expenseController = {
         }
       }
 
-      // Validate type if provided
-      if (type !== undefined && !['shop', 'personal'].includes(type)) {
-        return res.status(400).json({ 
-          error: 'Type must be either "shop" or "personal"' 
-        });
-      }
-
       const result = await expenseService.update(id, {
         description,
         amount: amount !== undefined ? parseFloat(amount) : undefined,
         expense_date,
-        type
+        recipient_id
       });
 
       if (result.error) {
