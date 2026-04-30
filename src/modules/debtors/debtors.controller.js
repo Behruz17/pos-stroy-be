@@ -38,20 +38,22 @@ const debtorsController = {
 
   create: async (req, res) => {
     try {
-      const { full_name, phone, debt_amount, description } = req.body;
+      const { full_name, phone, initial_debt, description } = req.body;
       
-      if (!full_name || !debt_amount) {
-        return res.status(400).json({ error: 'Full name and debt amount are required' });
+      if (!full_name) {
+        return res.status(400).json({ error: 'Full name is required' });
       }
       
-      if (parseFloat(debt_amount) <= 0) {
-        return res.status(400).json({ error: 'Debt amount must be positive' });
+      const initialDebt = initial_debt ? parseFloat(initial_debt) : 0;
+      
+      if (initialDebt < 0) {
+        return res.status(400).json({ error: 'Initial debt cannot be negative' });
       }
       
       const debtorData = {
         full_name,
         phone,
-        debt_amount: parseFloat(debt_amount),
+        initial_debt: initialDebt,
         description
       };
       
@@ -69,20 +71,15 @@ const debtorsController = {
   update: async (req, res) => {
     try {
       const { id } = req.params;
-      const { full_name, phone, debt_amount, description } = req.body;
+      const { full_name, phone, description } = req.body;
       
-      if (!full_name || !debt_amount) {
-        return res.status(400).json({ error: 'Full name and debt amount are required' });
-      }
-      
-      if (parseFloat(debt_amount) <= 0) {
-        return res.status(400).json({ error: 'Debt amount must be positive' });
+      if (!full_name) {
+        return res.status(400).json({ error: 'Full name is required' });
       }
       
       const debtorData = {
         full_name,
         phone,
-        debt_amount: parseFloat(debt_amount),
         description
       };
       
@@ -101,6 +98,7 @@ const debtorsController = {
     }
   },
 
+  
   delete: async (req, res) => {
     try {
       const { id } = req.params;

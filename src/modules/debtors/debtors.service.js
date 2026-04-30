@@ -38,22 +38,44 @@ const debtorsService = {
   },
 
   create: async (debtorData) => {
-    const { full_name, phone, debt_amount, description } = debtorData;
+    const { full_name, phone, initial_debt, description } = debtorData;
     
-    const [result] = await db.execute(
-      'INSERT INTO debtors (full_name, phone, debt_amount, description) VALUES (?, ?, ?, ?)',
-      [full_name, phone || null, debt_amount, description || null]
-    );
+    const connection = await db.getConnection();
+    await connection.beginTransaction();
     
-    return result.insertId;
+    try {
+      // Create debtor with initial_debt as debt_amount
+      const [result] = await connection.execute(
+        'INSERT INTO debtors (full_name, phone, debt_amount, description) VALUES (?, ?, ?, ?)',
+        [full_name, phone || null, initial_debt || 0, description || null]
+      );
+      
+      const debtorId = result.insertId;
+      
+      // If initial_debt > 0, create BORROWED operation
+      if (initial_debt && parseFloat(initial_debt) > 0) {
+        await connection.execute(
+          'INSERT INTO debtor_operations (debtor_id, amount, type, description) VALUES (?, ?, ?, ?)',
+          [debtorId, initial_debt, 'BORROWED', 'Начальный долг при создании']
+        );
+      }
+      
+      await connection.commit();
+      return debtorId;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   },
 
   update: async (id, debtorData) => {
-    const { full_name, phone, debt_amount, description } = debtorData;
+    const { full_name, phone, description } = debtorData;
     
     const [result] = await db.execute(
-      'UPDATE debtors SET full_name = ?, phone = ?, debt_amount = ?, description = ? WHERE id = ? AND status = 1',
-      [full_name, phone || null, debt_amount, description || null, id]
+      'UPDATE debtors SET full_name = ?, phone = ?, description = ? WHERE id = ? AND status = 1',
+      [full_name, phone || null, description || null, id]
     );
     
     return result.affectedRows > 0;
