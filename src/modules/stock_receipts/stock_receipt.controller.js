@@ -33,7 +33,7 @@ const stockReceiptController = {
 
   create: async (req, res) => {
     try {
-      const { supplier_id, items, currency = 'TJS', rate = 1.0000 } = req.body;
+      const { supplier_id, items, currency = 'TJS', rate = 1.0000, delivery_cost } = req.body;
 
       if (!supplier_id) {
         return res.status(400).json({ error: 'Supplier is required' });
@@ -48,6 +48,20 @@ const stockReceiptController = {
         if (!item.product_id || !item.quantity || item.quantity <= 0) {
           return res.status(400).json({ error: 'Each item must have product_id and quantity > 0' });
         }
+        
+        // Валидация полей для расчета себестоимости на уровне позиции
+        if (item.tonnage && (typeof item.tonnage !== 'number' || item.tonnage <= 0)) {
+          return res.status(400).json({ error: 'Item tonnage must be a positive number' });
+        }
+        
+        if (item.price_per_ton !== null && (typeof item.price_per_ton !== 'number' || item.price_per_ton <= 0)) {
+          return res.status(400).json({ error: 'Item price per ton must be a positive number' });
+        }
+      }
+
+      // Валидация delivery_cost на уровне прихода
+      if (delivery_cost && (typeof delivery_cost !== 'number' || delivery_cost < 0)) {
+        return res.status(400).json({ error: 'Delivery cost must be a non-negative number' });
       }
 
       // Validate currency
@@ -66,7 +80,8 @@ const stockReceiptController = {
         supplier_id,
         items,
         currency,
-        rate
+        rate,
+        delivery_cost
       });
 
       if (result.error) {

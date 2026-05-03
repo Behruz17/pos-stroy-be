@@ -56,7 +56,7 @@ const stockReceiptService = {
     return receipt;
   },
 
-  create: async ({ created_by, supplier_id, items, currency = 'TJS', rate = 1.0000 }) => {
+  create: async ({ created_by, supplier_id, items, currency = 'TJS', rate = 1.0000, delivery_cost = null }) => {
     const connection = await db.getConnection();
 
     try {
@@ -66,12 +66,19 @@ const stockReceiptService = {
         return { error: 'Items are required' };
       }
 
+      // Фронтенд сам рассчитывает и отправляет готовые данные
       let totalAmount = 0;
       let totalAmountConverted = null;
       
+      // Считаем сумму: если есть тонна и цена/тонна - по тоннам, иначе по метрам
       for (const item of items) {
-        const itemTotal = (item.quantity || 0) * (item.purchase_cost || 0);
-        totalAmount += itemTotal;
+        if (item.tonnage && item.price_per_ton) {
+          // Считаем по тоннам
+          totalAmount += item.tonnage * item.price_per_ton;
+        } else {
+          // Считаем по метрам
+          totalAmount += (item.quantity || 0) * (item.purchase_cost || 0);
+        }
       }
       
       // Calculate converted amount if not TJS
@@ -80,29 +87,40 @@ const stockReceiptService = {
       }
 
       const [receiptResult] = await connection.execute(
-        'INSERT INTO stock_receipts (created_by, supplier_id, total_amount, status, currency, rate, total_amount_converted) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [created_by, supplier_id || null, totalAmount, 1, currency, rate, totalAmountConverted]
+        'INSERT INTO stock_receipts (created_by, supplier_id, total_amount, status, currency, rate, total_amount_converted, delivery_cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [created_by, supplier_id || null, totalAmount, 1, currency, rate, totalAmountConverted, delivery_cost]
       );
       const receiptId = receiptResult.insertId;
 
       for (const item of items) {
         let purchaseCostConverted = null;
+        let actualCost = item.actual_cost || item.purchase_cost || 0;
+        let actualCostConverted = null;
 
-        // Calculate converted purchase cost if not TJS
-        if (currency !== 'TJS' && rate !== 1.0000 && item.purchase_cost) {
-          purchaseCostConverted = item.purchase_cost * rate;
+        // Конвертируем цены в TJS
+        if (currency !== 'TJS' && rate !== 1.0000) {
+          if (item.purchase_cost) {
+            purchaseCostConverted = item.purchase_cost * rate;
+          }
+          if (actualCost) {
+            actualCostConverted = actualCost * rate;
+          }
         }
 
         await connection.execute(
-          'INSERT INTO stock_receipt_items (receipt_id, product_id, quantity, purchase_cost, selling_price, status, purchase_cost_converted) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO stock_receipt_items (receipt_id, product_id, quantity, purchase_cost, selling_price, status, purchase_cost_converted, tonnage, price_per_ton, actual_cost, actual_cost_converted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [
             receiptId,
             item.product_id,
             item.quantity,
-            item.purchase_cost || null,
+            item.purchase_cost,
             item.selling_price || null,
             1,
-            purchaseCostConverted
+            purchaseCostConverted,
+            item.tonnage || null,
+            item.price_per_ton || null,
+            actualCost,
+            actualCostConverted
           ]
         );
 
@@ -118,7 +136,7 @@ const stockReceiptService = {
           const batchCode = item.batch_code || `BATCH-${receiptId}-${Date.now()}`;
           await connection.execute(
             'INSERT INTO stock_items (product_id, quantity, batch_code, purchase_cost, selling_price, receipt_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [item.product_id, item.quantity, batchCode, item.purchase_cost || null, item.selling_price || null, receiptId, 1]
+            [item.product_id, item.quantity, batchCode, actualCost, item.selling_price || null, receiptId, 1]
           );
           // Update stock total (sum of all batches)
           await connection.execute(`

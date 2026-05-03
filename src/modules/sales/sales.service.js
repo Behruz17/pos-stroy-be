@@ -27,8 +27,36 @@ const salesService = {
 
     query += ' ORDER BY s.created_at DESC';
 
-    const [rows] = await db.execute(query, params);
-    return rows;
+    const [sales] = await db.execute(query, params);
+
+    // Get items for all sales in one query
+    if (sales.length > 0) {
+      const saleIds = sales.map(sale => sale.id);
+      const [items] = await db.execute(`
+        SELECT si.*, p.name as product_name, p.product_code, s.name as style_name
+        FROM sale_items si
+        JOIN products p ON si.product_id = p.id AND p.status = 1
+        LEFT JOIN styles s ON si.style_id = s.id AND s.status = 1
+        WHERE si.sale_id IN (${saleIds.map(() => '?').join(',')}) AND si.status = 1
+        ORDER BY si.sale_id, si.id
+      `, saleIds);
+
+      // Group items by sale_id
+      const itemsBySale = {};
+      items.forEach(item => {
+        if (!itemsBySale[item.sale_id]) {
+          itemsBySale[item.sale_id] = [];
+        }
+        itemsBySale[item.sale_id].push(item);
+      });
+
+      // Add items to sales
+      sales.forEach(sale => {
+        sale.items = itemsBySale[sale.id] || [];
+      });
+    }
+
+    return sales;
   },
 
   getById: async (id) => {
