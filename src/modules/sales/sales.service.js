@@ -196,6 +196,7 @@ const salesService = {
         }
       }
 
+      // Calculate total amount
       let totalAmount = 0;
       for (const item of items) {
         const unitValue = item.unit_value || 1.0;
@@ -206,6 +207,9 @@ const salesService = {
       const finalCashAmount = cash_amount !== undefined ? parseFloat(cash_amount) : 0;
       const finalElectronicAmount = electronic_amount !== undefined ? parseFloat(electronic_amount) : 0;
       const totalPaid = finalCashAmount + finalElectronicAmount;
+      
+      // Calculate discount
+      const discount = Math.max(0, totalAmount - totalPaid);
       
       // Calculate payment_status based on total paid amount
       let calculatedPaymentStatus = 'DEBT';
@@ -242,8 +246,8 @@ const salesService = {
       }
       
       const [saleResult] = await connection.execute(
-        'INSERT INTO sales (customer_id, created_by, total_amount, cash_amount, electronic_amount, payment_status, account_id, stage, debt_deadline, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [finalCustomerId || null, created_by, totalAmount, finalCashAmount, finalElectronicAmount, finalPaymentStatus, primaryAccountId, finalStage, debt_deadline || null, 1]
+        'INSERT INTO sales (customer_id, created_by, total_amount, discount, cash_amount, electronic_amount, payment_status, account_id, stage, debt_deadline, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [finalCustomerId || null, created_by, totalAmount, discount, finalCashAmount, finalElectronicAmount, finalPaymentStatus, primaryAccountId, finalStage, debt_deadline || null, 1]
       );
       const saleId = saleResult.insertId;
 

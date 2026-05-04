@@ -47,6 +47,16 @@ const returnsController = {
         if (!item.product_id || !item.quantity || item.quantity <= 0 || !item.unit_price) {
           return res.status(400).json({ error: 'Each item must have product_id, quantity > 0 and unit_price' });
         }
+        
+        // Проверяем unit_value (по умолчанию 1.0)
+        if (item.unit_value && (typeof item.unit_value !== 'number' || item.unit_value <= 0)) {
+          return res.status(400).json({ error: 'unit_value must be a positive number' });
+        }
+        
+        // Проверяем что для партийных товаров указан stock_item_id
+        if (item.stock_item_id && typeof item.stock_item_id !== 'number') {
+          return res.status(400).json({ error: 'stock_item_id must be a number' });
+        }
       }
 
       const result = await returnsService.create({

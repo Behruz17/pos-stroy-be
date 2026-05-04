@@ -45,9 +45,11 @@ const returnsService = {
     const returnRecord = rows[0];
 
     const [items] = await db.execute(`
-      SELECT ri.*, p.name as product_name, p.product_code
+      SELECT ri.*, p.name as product_name, p.product_code, p.type as product_type,
+             si.batch_code
       FROM return_items ri
       JOIN products p ON ri.product_id = p.id AND p.status = 1
+      LEFT JOIN stock_items si ON ri.stock_item_id = si.id AND si.status = 1
       WHERE ri.return_id = ? AND ri.status = 1
     `, [id]);
 
@@ -80,7 +82,8 @@ const returnsService = {
 
       let totalAmount = 0;
       for (const item of items) {
-        totalAmount += item.quantity * item.unit_price;
+        const unitValue = item.unit_value || 1.0;
+        totalAmount += item.quantity * item.unit_price * unitValue;
       }
 
       const [returnResult] = await connection.execute(
@@ -90,16 +93,66 @@ const returnsService = {
       const returnId = returnResult.insertId;
 
       for (const item of items) {
-        const itemTotal = item.quantity * item.unit_price;
-        await connection.execute(
-          'INSERT INTO return_items (return_id, product_id, quantity, unit_price, total_price, status) VALUES (?, ?, ?, ?, ?, ?)',
-          [returnId, item.product_id, item.quantity, item.unit_price, itemTotal, 1]
+        const unitValue = item.unit_value || 1.0;
+        const itemTotal = item.quantity * item.unit_price * unitValue;
+        
+        // Определяем тип продукта и обрабатываем соответственно
+        const [productRows] = await connection.execute(
+          'SELECT type FROM products WHERE id = ? AND status = 1',
+          [item.product_id]
         );
-
-        // Increase stock
+        
+        if (productRows.length === 0) {
+          throw new Error(`Product ${item.product_id} not found`);
+        }
+        
+        const productType = productRows[0].type;
+        let stockItemId = null;
+        
+        if (productType === 'batch' && item.stock_item_id) {
+          // Для партийных товаров - проверяем существование партии
+          const [batchRows] = await connection.execute(
+            'SELECT id FROM stock_items WHERE id = ? AND product_id = ? AND status = 1',
+            [item.stock_item_id, item.product_id]
+          );
+          
+          if (batchRows.length === 0) {
+            throw new Error(`Batch ${item.stock_item_id} not found for product ${item.product_id}`);
+          }
+          
+          stockItemId = item.stock_item_id;
+          
+          // Увеличиваем количество в конкретной партии
+          const unitValue = item.unit_value || 1.0;
+          const realQuantity = item.quantity * unitValue;
+          
+          await connection.execute(
+            'UPDATE stock_items SET quantity = quantity + ? WHERE id = ?',
+            [realQuantity, stockItemId]
+          );
+          
+          // Также обновляем общий склад для партионных товаров
+          await connection.execute(
+            'INSERT INTO stock (product_id, quantity) VALUES (?, ?) ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)',
+            [item.product_id, realQuantity]
+          );
+          
+        } else if (productType === 'simple') {
+          // Для простых товаров - работаем с общим складом
+          const unitValue = item.unit_value || 1.0;
+          const realQuantity = item.quantity * unitValue;
+          
+          await connection.execute(
+            'INSERT INTO stock (product_id, quantity) VALUES (?, ?) ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)',
+            [item.product_id, realQuantity]
+          );
+        } else if (productType === 'batch' && !item.stock_item_id) {
+          throw new Error(`stock_item_id is required for batch product ${item.product_id}`);
+        }
+        
         await connection.execute(
-          'INSERT INTO stock (product_id, quantity) VALUES (?, ?) ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)',
-          [item.product_id, item.quantity]
+          'INSERT INTO return_items (return_id, product_id, stock_item_id, quantity, unit_value, unit_price, total_price, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [returnId, item.product_id, stockItemId, item.quantity, item.unit_value || 1.0, item.unit_price, itemTotal, 1]
         );
       }
 
@@ -145,16 +198,34 @@ const returnsService = {
       const { customer_id, total_amount } = returnRows[0];
 
       const [itemRows] = await connection.execute(
-        'SELECT product_id, quantity FROM return_items WHERE return_id = ? AND status = 1',
+        'SELECT product_id, quantity, stock_item_id, unit_value FROM return_items WHERE return_id = ? AND status = 1',
         [id]
       );
 
-      // Decrease stock
+      // Decrease stock - обрабатываем в зависимости от типа
       for (const item of itemRows) {
-        await connection.execute(
-          'UPDATE stock SET quantity = quantity - ? WHERE product_id = ?',
-          [item.quantity, item.product_id]
-        );
+        const unitValue = item.unit_value || 1.0;
+        const realQuantity = item.quantity * unitValue;
+        
+        if (item.stock_item_id) {
+          // Для партийных товаров - уменьшаем количество в партии
+          await connection.execute(
+            'UPDATE stock_items SET quantity = quantity - ? WHERE id = ?',
+            [realQuantity, item.stock_item_id]
+          );
+          
+          // Также уменьшаем общий склад для партионных товаров
+          await connection.execute(
+            'UPDATE stock SET quantity = quantity - ? WHERE product_id = ?',
+            [realQuantity, item.product_id]
+          );
+        } else {
+          // Для простых товаров - уменьшаем общий склад
+          await connection.execute(
+            'UPDATE stock SET quantity = quantity - ? WHERE product_id = ?',
+            [realQuantity, item.product_id]
+          );
+        }
       }
 
       // Restore customer balance

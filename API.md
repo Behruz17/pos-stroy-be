@@ -1947,6 +1947,23 @@ GET /api/sales?year=2026
 }
 ```
 
+Продажа со скидкой:
+```json
+{
+  "customer_id": 2,
+  "payment_status": "PAID",
+  "cash_amount": 160.00,
+  "items": [
+    {
+      "product_id": 5,
+      "quantity": 1,
+      "unit_price": 165.00
+    }
+  ]
+}
+```
+**Результат:** `total_amount = 165.00`, `paid = 160.00`, `discount = 5.00`
+
 **Response (200):**
 ```json
 [
@@ -1957,6 +1974,7 @@ GET /api/sales?year=2026
     "total_amount": 500.00,
     "cash_amount": 300.00,
     "electronic_amount": 200.00,
+    "discount": 0.00,
     "payment_status": "PAID",
     "stage": "ordered",
     "created_by": 1,
@@ -1989,6 +2007,7 @@ Authorization: Bearer <token>
   "total_amount": 500.00,
   "cash_amount": 300.00,
   "electronic_amount": 200.00,
+  "discount": 0.00,
   "payment_status": "PAID",
   "stage": "ordered",
   "debt_deadline": "2026-05-15T23:59:59.000Z",
@@ -2102,19 +2121,6 @@ Authorization: Bearer <token>
 ```
 Authorization: Bearer <token>
 ```
-
-**Request Body:**
-```json
-{
-  "customer_id": 2,
-  "payment_status": "PARTIAL",
-  "cash_amount": 300.00,
-  "electronic_amount": 200.00,
-  "stage": "ordered",
-  "account_id": 1,
-  "debt_deadline": "2026-05-15T23:59:59.000Z",
-  "items": [
-    {
       "product_id": 5,
       "quantity": 3,
       "unit_price": 50.00,
@@ -2151,6 +2157,7 @@ Authorization: Bearer <token>
   - `PAID` если сумма оплат >= total_amount
   - `PARTIAL` если 0 < сумма оплат < total_amount  
   - `DEBT` если сумма оплат = 0
+- `discount` - **Автоматически рассчитывается** как `total_amount - (cash_amount + electronic_amount)`. Всегда >= 0
 - `style_id` - ID стиля товара (опционально). Получить из `/api/styles`. Например: 1 (гладкий), 2 (волна), 3 (2 таксим)
 - `stock_item_id` - **Обязательно для batch товаров**. ID партии из `/products/:id/stock-items`
 - Для simple товаров `stock_item_id` не указывается
@@ -2166,7 +2173,8 @@ Authorization: Bearer <token>
 ```json
 {
   "id": 1,
-  "total_amount": "500.00"
+  "total_amount": "500.00",
+  "discount": "0.00"
 }
 ```
 
@@ -2191,7 +2199,7 @@ Authorization: Bearer <token>
 - `400` — Партия не найдена для batch товара
 - `400` — Недостаточно остатков в партии для batch товара
 - `400` — Суммы оплаты не могут быть отрицательными
-- `400` — Общая сумма оплаты не может превышать сумму продажи
+- `400` — Общая сумма оплаты не может превышать сумму продажи (система автоматически рассчитает скидку)
 
 ---
 
@@ -2420,19 +2428,34 @@ Authorization: Bearer <token>
 {
   "id": 1,
   "customer_id": 2,
-  "customer_name": "Иванов Иван",
-  "total_amount": 150.00,
-  "created_by": 1,
-  "created_at": "2026-04-05T12:00:00.000Z",
+  "customer_name": "John Doe",
+  "total_amount": "2750.00",
+  "created_at": "2026-04-11T22:45:53.000Z",
   "items": [
     {
       "id": 1,
       "product_id": 5,
-      "product_name": "Цемент М500",
-      "product_code": "CEM-500",
-      "quantity": 3,
+      "quantity": 2,
+      "unit_value": 25.0,
       "unit_price": 50.00,
-      "total_price": 150.00
+      "total_price": 2500.00,
+      "product_name": "Sample Product",
+      "product_code": "PROD-001",
+      "product_type": "simple",
+      "batch_code": null
+    },
+    {
+      "id": 2,
+      "product_id": 14,
+      "stock_item_id": 123,
+      "quantity": 1,
+      "unit_value": 50.0,
+      "unit_price": 15.00,
+      "total_price": 750.00,
+      "product_name": "Batch Product",
+      "product_code": "BATCH-001",
+      "product_type": "batch",
+      "batch_code": "BATCH-A123"
     }
   ]
 }
@@ -2445,7 +2468,7 @@ Authorization: Bearer <token>
 
 ### POST `/returns`
 
-Создание нового возврата. Увеличивает остатки на складе и обновляет баланс клиента (если продажа была в DEBT).
+Создание нового возврата. Увеличивает остатки на складе и обновляет баланс клиента. Поддерживает как простые, так и партионные товары.
 
 **Headers:**
 ```
@@ -2459,32 +2482,62 @@ Authorization: Bearer <token>
   "items": [
     {
       "product_id": 5,
-      "quantity": 3,
+      "quantity": 2,
+      "unit_value": 25.0,
       "unit_price": 50.00
+    },
+    {
+      "product_id": 14,
+      "stock_item_id": 123,
+      "quantity": 1,
+      "unit_value": 50.0,
+      "unit_price": 15.00
     }
   ]
 }
 ```
 
+**Параметры:**
+- `customer_id` (обязательно) — ID клиента
+- `items` (обязательно) — массив возвращаемых товаров
+- `product_id` (обязательно) — ID товара
+- `stock_item_id` (для batch товаров) — ID партии
+- `quantity` (обязательно) — количество единиц
+- `unit_value` (опционально) — вес/объем единицы (по умолчанию 1.0)
+- `unit_price` (обязательно) — цена за единицу веса/объема
+
 **Response (201):**
 ```json
 {
   "id": 1,
-  "total_amount": "150.00"
+  "total_amount": "2750.00"
 }
 ```
 
 **Логика:**
 - Создает запись в `returns`
-- Создает записи в `return_items`
-- Увеличивает остатки в `stock`
+- Создает записи в `return_items` с учетом `unit_value`
+- **Для простых товаров**: увеличивает остатки в `stock`
+- **Для партионных товаров**: увеличивает количество в конкретной партии (`stock_items`)
 - Обновляет баланс клиента (уменьшает долг)
 - Создает запись в `customer_operations` с типом 'RETURN'
+
+**Расчеты:**
+- **Сумма**: `quantity * unit_price * unit_value`
+- **Реальное количество**: `quantity * unit_value`
 
 **Errors:**
 - `400` — Клиент и позиции обязательны
 - `400` — Каждый item должен иметь product_id, quantity > 0 и unit_price
+- `400` — Для batch товаров обязателен stock_item_id
+- `400` — unit_value должен быть положительным числом
 - `400` — Клиент не найден
+- `400` — Партия не найдена (для batch товаров)
+
+---
+
+### DELETE `/returns/:id`
+
 Удаление возврата. Уменьшает остатки на складе и отменяет изменение баланса клиента.
 
 **Headers:**
@@ -2500,7 +2553,8 @@ Authorization: Bearer <token>
 ```
 
 **Логика:**
-- Уменьшает остатки в `stock`
+- **Для простых товаров**: уменьшает остатки в `stock`
+- **Для партионных товаров**: уменьшает количество в конкретной партии (`stock_items`)
 - Удаляет записи из `return_items`
 - Восстанавливает баланс клиента
 - Удаляет запись из `returns`
