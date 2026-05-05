@@ -208,9 +208,6 @@ const salesService = {
       const finalElectronicAmount = electronic_amount !== undefined ? parseFloat(electronic_amount) : 0;
       const totalPaid = finalCashAmount + finalElectronicAmount;
       
-      // Calculate discount
-      const discount = Math.max(0, totalAmount - totalPaid);
-      
       // Calculate payment_status based on total paid amount
       let calculatedPaymentStatus = 'DEBT';
       if (totalPaid >= totalAmount) {
@@ -222,12 +219,11 @@ const salesService = {
       // Use provided payment_status or calculated one
       const finalPaymentStatus = payment_status || calculatedPaymentStatus;
       
-      // Validate that total paid doesn't exceed total amount
-      if (totalPaid > totalAmount) {
-        await connection.rollback();
-        connection.release();
-        return { error: 'Total payment amount cannot exceed total sale amount' };
-      }
+      // Calculate discount - only for PAID status
+      const discount = finalPaymentStatus === 'PAID' ? Math.max(0, totalAmount - totalPaid) : 0;
+      
+      // Note: totalPaid can exceed totalAmount for PAID status (discount scenario)
+      // For PARTIAL status, totalPaid must be less than totalAmount
       
       // Validate stage
       const validStages = ['ordered', 'ready', 'delivered'];

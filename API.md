@@ -1957,16 +1957,6 @@ GET /api/sales?year=2026
     {
       "product_id": 5,
       "quantity": 1,
-      "unit_price": 165.00
-    }
-  ]
-}
-```
-**Результат:** `total_amount = 165.00`, `paid = 160.00`, `discount = 5.00`
-
-**Response (200):**
-```json
-[
   {
     "id": 1,
     "customer_id": 2,
@@ -2157,7 +2147,7 @@ Authorization: Bearer <token>
   - `PAID` если сумма оплат >= total_amount
   - `PARTIAL` если 0 < сумма оплат < total_amount  
   - `DEBT` если сумма оплат = 0
-- `discount` - **Автоматически рассчитывается** как `total_amount - (cash_amount + electronic_amount)`. Всегда >= 0
+- `discount` - **Рассчитывается только для PAID** как `total_amount - (cash_amount + electronic_amount)`. Для PARTIAL и DEBT всегда 0
 - `style_id` - ID стиля товара (опционально). Получить из `/api/styles`. Например: 1 (гладкий), 2 (волна), 3 (2 таксим)
 - `stock_item_id` - **Обязательно для batch товаров**. ID партии из `/products/:id/stock-items`
 - Для simple товаров `stock_item_id` не указывается
@@ -2199,7 +2189,7 @@ Authorization: Bearer <token>
 - `400` — Партия не найдена для batch товара
 - `400` — Недостаточно остатков в партии для batch товара
 - `400` — Суммы оплаты не могут быть отрицательными
-- `400` — Общая сумма оплаты не может превышать сумму продажи (система автоматически рассчитает скидку)
+- `400` — Для PARTIAL статуса сумма оплаты должна быть меньше суммы продажи
 
 ---
 
