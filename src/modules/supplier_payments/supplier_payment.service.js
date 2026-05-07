@@ -34,8 +34,8 @@ const supplierPaymentService = {
 
       // Create payment record
       const [result] = await connection.execute(
-        'INSERT INTO supplier_operations (supplier_id, account_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-        [supplier_id, account_id, sum, 'PAYMENT', 1]
+        'INSERT INTO supplier_operations (supplier_id, account_id, sum, type, status, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+        [supplier_id, account_id, sum, 'PAYMENT', 1, created_by]
       );
 
       // Decrease supplier balance (payment reduces debt)
@@ -94,6 +94,9 @@ const supplierPaymentService = {
       );
 
       await connection.execute('UPDATE supplier_operations SET status = 0 WHERE id = ?', [id]);
+
+      // Deactivate related transactions
+      await accountsService.deactivateTransactions(connection, 'SUPPLIER_PAYMENT', id);
 
       await connection.commit();
       return { success: true };

@@ -164,8 +164,8 @@ const returnsService = {
 
       // Create customer operation record
       await connection.execute(
-        'INSERT INTO customer_operations (customer_id, sum, type, status) VALUES (?, ?, ?, ?)',
-        [customer_id, totalAmount, 'RETURN', 1]
+        'INSERT INTO customer_operations (customer_id, sum, type, status, created_by) VALUES (?, ?, ?, ?, ?)',
+        [customer_id, totalAmount, 'RETURN', 1, created_by]
       );
 
       await connection.commit();

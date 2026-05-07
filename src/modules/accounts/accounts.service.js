@@ -248,6 +248,16 @@ const accountsService = {
       reference_id: id,
       description: `Оплата поставщику #${id}`
     });
+  },
+
+  // Deactivate transactions by reference type and ID
+  deactivateTransactions: async (connection, referenceType, referenceId) => {
+    const [result] = await connection.execute(
+      'UPDATE transactions SET status = 0 WHERE reference_type = ? AND reference_id = ?',
+      [referenceType, referenceId]
+    );
+    
+    return result.affectedRows;
   }
 };
 

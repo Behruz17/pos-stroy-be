@@ -34,8 +34,8 @@ const customerPaymentService = {
 
       // Create payment record
       const [result] = await connection.execute(
-        'INSERT INTO customer_operations (customer_id, account_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-        [customer_id, account_id, sum, 'PAYMENT', 1]
+        'INSERT INTO customer_operations (customer_id, account_id, sum, type, status, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+        [customer_id, account_id, sum, 'PAYMENT', 1, created_by]
       );
 
       // Decrease customer balance (payment reduces debt)
@@ -94,6 +94,9 @@ const customerPaymentService = {
       );
 
       await connection.execute('UPDATE customer_operations SET status = 0 WHERE id = ?', [id]);
+
+      // Deactivate related transactions
+      await accountsService.deactivateTransactions(connection, 'CUSTOMER_PAYMENT', id);
 
       await connection.commit();
       return { success: true };

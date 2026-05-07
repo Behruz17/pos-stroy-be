@@ -1,0 +1,201 @@
+const db = require('../../config/db');
+
+const userCashflowService = {
+  // Get all cash flow operations for user
+  getUserCashflow: async (filters = {}) => {
+    const { start_date, end_date, created_by } = filters;
+    
+    let dateFilter = '';
+    let dateFilterSales = '';
+    let dateFilterCustomerOps = '';
+    let dateFilterReturns = '';
+    let dateFilterExpenses = '';
+    let dateFilterSupplierOps = '';
+    let dateFilterCustomerOpsSimple = '';
+    let dateFilterSupplierOpsSimple = '';
+    
+    if (start_date && end_date) {
+      dateFilter = `AND DATE(created_at) BETWEEN '${start_date}' AND '${end_date}'`;
+      dateFilterSales = `AND DATE(s.created_at) BETWEEN '${start_date}' AND '${end_date}'`;
+      dateFilterCustomerOps = `AND DATE(cp.date) BETWEEN '${start_date}' AND '${end_date}'`;
+      dateFilterCustomerOpsSimple = `AND DATE(date) BETWEEN '${start_date}' AND '${end_date}'`;
+      dateFilterReturns = `AND DATE(r.created_at) BETWEEN '${start_date}' AND '${end_date}'`;
+      dateFilterExpenses = `AND DATE(e.created_at) BETWEEN '${start_date}' AND '${end_date}'`;
+      dateFilterSupplierOps = `AND DATE(sp.date) BETWEEN '${start_date}' AND '${end_date}'`;
+      dateFilterSupplierOpsSimple = `AND DATE(date) BETWEEN '${start_date}' AND '${end_date}'`;
+    } else if (start_date) {
+      dateFilter = `AND DATE(created_at) >= '${start_date}'`;
+      dateFilterSales = `AND DATE(s.created_at) >= '${start_date}'`;
+      dateFilterCustomerOps = `AND DATE(cp.date) >= '${start_date}'`;
+      dateFilterCustomerOpsSimple = `AND DATE(date) >= '${start_date}'`;
+      dateFilterReturns = `AND DATE(r.created_at) >= '${start_date}'`;
+      dateFilterExpenses = `AND DATE(e.created_at) >= '${start_date}'`;
+      dateFilterSupplierOps = `AND DATE(sp.date) >= '${start_date}'`;
+      dateFilterSupplierOpsSimple = `AND DATE(date) >= '${start_date}'`;
+    } else if (end_date) {
+      dateFilter = `AND DATE(created_at) <= '${end_date}'`;
+      dateFilterSales = `AND DATE(s.created_at) <= '${end_date}'`;
+      dateFilterCustomerOps = `AND DATE(cp.date) <= '${end_date}'`;
+      dateFilterCustomerOpsSimple = `AND DATE(date) <= '${end_date}'`;
+      dateFilterReturns = `AND DATE(r.created_at) <= '${end_date}'`;
+      dateFilterExpenses = `AND DATE(e.created_at) <= '${end_date}'`;
+      dateFilterSupplierOps = `AND DATE(sp.date) <= '${end_date}'`;
+      dateFilterSupplierOpsSimple = `AND DATE(date) <= '${end_date}'`;
+    }
+
+    let userFilter = '';
+    if (created_by) {
+      userFilter = `AND created_by = ${created_by}`;
+    }
+
+    try {
+      // Get all income operations
+      const [income] = await db.execute(`
+        SELECT 
+          'sale' as type,
+          s.id,
+          (s.total_amount - COALESCE(s.discount, 0)) as amount,
+          s.customer_id as counterpart_id,
+          c.full_name as counterpart_name,
+          'Продажа' as description,
+          s.created_at,
+          'income' as flow_type
+        FROM sales s
+        LEFT JOIN customers c ON s.customer_id = c.id
+        WHERE s.status = 1 ${dateFilterSales} ${userFilter}
+        
+        UNION ALL
+        
+        SELECT 
+          'customer_payment' as type,
+          cp.id,
+          cp.sum as amount,
+          cp.customer_id as counterpart_id,
+          c.full_name as counterpart_name,
+          'Оплата клиента' as description,
+          cp.date as created_at,
+          'income' as flow_type
+        FROM customer_operations cp
+        LEFT JOIN customers c ON cp.customer_id = c.id
+        WHERE cp.status = 1 AND cp.type = 'PAYMENT' ${dateFilterCustomerOps} ${userFilter}
+        
+        ORDER BY created_at DESC
+      `);
+
+      // Get all expense operations
+      const [expenses] = await db.execute(`
+        SELECT 
+          'return' as type,
+          r.id,
+          r.total_amount as amount,
+          r.customer_id as counterpart_id,
+          c.full_name as counterpart_name,
+          'Возврат товара' as description,
+          r.created_at,
+          'expense' as flow_type
+        FROM returns r
+        LEFT JOIN customers c ON r.customer_id = c.id
+        WHERE r.status = 1 ${dateFilterReturns} ${userFilter}
+        
+        UNION ALL
+        
+        SELECT 
+          'expense' as type,
+          e.id,
+          e.amount,
+          NULL as counterpart_id,
+          NULL as counterpart_name,
+          e.description,
+          e.created_at,
+          'expense' as flow_type
+        FROM expenses e
+        WHERE e.status = 1 ${dateFilterExpenses} ${userFilter}
+        
+        UNION ALL
+        
+        SELECT 
+          'supplier_payment' as type,
+          sp.id,
+          sp.sum as amount,
+          sp.supplier_id as counterpart_id,
+          s.name as counterpart_name,
+          'Оплата поставщику' as description,
+          sp.date as created_at,
+          'expense' as flow_type
+        FROM supplier_operations sp
+        LEFT JOIN suppliers s ON sp.supplier_id = s.id
+        WHERE sp.status = 1 AND sp.type = 'PAYMENT' ${dateFilterSupplierOps} ${userFilter}
+        
+        ORDER BY created_at DESC
+      `);
+
+      // Combine all operations
+      const allOperations = [...income, ...expenses].sort((a, b) => 
+        new Date(b.created_at) - new Date(a.created_at)
+      );
+
+      // Calculate totals
+      const totalIncome = income.reduce((sum, op) => sum + parseFloat(op.amount), 0);
+      const totalExpenses = expenses.reduce((sum, op) => sum + parseFloat(op.amount), 0);
+      const netCashflow = totalIncome - totalExpenses;
+
+      // If no specific user requested, get summary by all users
+      let usersSummary = null;
+      if (!created_by) {
+        const [users] = await db.execute(`
+          SELECT 
+            u.id,
+            u.name,
+            COALESCE(SUM(income.total_income), 0) as total_income,
+            COALESCE(SUM(expenses.total_expenses), 0) as total_expenses,
+            COALESCE(SUM(income.total_income), 0) - COALESCE(SUM(expenses.total_expenses), 0) as net_cashflow
+          FROM users u
+          LEFT JOIN (
+            SELECT created_by, SUM(total_amount - COALESCE(discount, 0)) as total_income
+            FROM sales WHERE status = 1 ${dateFilter}
+            GROUP BY created_by
+            UNION ALL
+            SELECT created_by, SUM(sum) as total_income
+            FROM customer_operations WHERE status = 1 AND type = 'PAYMENT' ${dateFilterCustomerOpsSimple}
+            GROUP BY created_by
+          ) income ON u.id = income.created_by
+          LEFT JOIN (
+            SELECT created_by, SUM(total_amount) as total_expenses
+            FROM returns WHERE status = 1 ${dateFilter}
+            GROUP BY created_by
+            UNION ALL
+            SELECT created_by, SUM(amount) as total_expenses
+            FROM expenses WHERE status = 1 ${dateFilter}
+            GROUP BY created_by
+            UNION ALL
+            SELECT created_by, SUM(sum) as total_expenses
+            FROM supplier_operations WHERE status = 1 AND type = 'PAYMENT' ${dateFilterSupplierOpsSimple}
+            GROUP BY created_by
+          ) expenses ON u.id = expenses.created_by
+          WHERE u.status = 1
+          GROUP BY u.id, u.name
+          ORDER BY net_cashflow DESC
+        `);
+        
+        usersSummary = users;
+      }
+
+      return {
+        operations: allOperations,
+        summary: {
+          total_income: totalIncome,
+          total_expenses: totalExpenses,
+          net_cashflow: netCashflow,
+          operations_count: allOperations.length
+        },
+        users_summary: usersSummary,
+        filters: { start_date, end_date, created_by }
+      };
+    } catch (error) {
+      console.error('Get user cashflow error:', error);
+      throw error;
+    }
+  }
+};
+
+module.exports = userCashflowService;

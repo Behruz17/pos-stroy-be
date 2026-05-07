@@ -301,8 +301,8 @@ const salesService = {
           );
 
           await connection.execute(
-            'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-            [finalCustomerId, saleId, totalAmount, 'DEBT', 1]
+            'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+            [finalCustomerId, saleId, totalAmount, 'DEBT', 1, created_by]
           );
         } else if (finalPaymentStatus === 'PARTIAL') {
           await connection.execute(
@@ -311,13 +311,13 @@ const salesService = {
           );
 
           await connection.execute(
-            'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-            [finalCustomerId, saleId, totalAmount, 'PARTIAL', 1]
+            'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+            [finalCustomerId, saleId, totalAmount, 'PARTIAL', 1, created_by]
           );
         } else {
           await connection.execute(
-            'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-            [finalCustomerId, saleId, totalAmount, 'PAID', 1]
+            'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+            [finalCustomerId, saleId, totalAmount, 'PAID', 1, created_by]
           );
         }
       }
@@ -460,18 +460,18 @@ const salesService = {
         if (finalCustomerId) {
           if (finalPaymentStatus === 'DEBT') {
             await connection.execute(
-              'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-              [finalCustomerId, id, newTotalAmount, 'DEBT', 1]
+              'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+              [finalCustomerId, id, newTotalAmount, 'DEBT', 1, created_by]
             );
           } else if (finalPaymentStatus === 'PARTIAL') {
             await connection.execute(
-              'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-              [finalCustomerId, id, newTotalAmount, 'PARTIAL', 1]
+              'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+              [finalCustomerId, id, newTotalAmount, 'PARTIAL', 1, created_by]
             );
           } else {
             await connection.execute(
-              'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-              [finalCustomerId, id, newTotalAmount, 'PAID', 1]
+              'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+              [finalCustomerId, id, newTotalAmount, 'PAID', 1, created_by]
             );
           }
         }
@@ -722,6 +722,9 @@ const salesService = {
       await connection.execute('UPDATE sale_items SET status = 0 WHERE sale_id = ?', [id]);
       await connection.execute('UPDATE sales SET status = 0 WHERE id = ?', [id]);
 
+      // Deactivate related transactions
+      await accountsService.deactivateTransactions(connection, 'SALE', id);
+
       await connection.commit();
       return { success: true };
     } catch (error) {
@@ -785,8 +788,8 @@ const salesService = {
 
         // Create customer operation record
         await connection.execute(
-          'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-          [sale.customer_id, saleId, amount, 'PAYMENT', 1]
+          'INSERT INTO customer_operations (customer_id, sale_id, sum, type, status, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+          [sale.customer_id, saleId, amount, 'PAYMENT', 1, created_by]
         );
       }
 

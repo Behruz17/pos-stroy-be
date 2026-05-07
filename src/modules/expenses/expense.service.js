@@ -213,6 +213,9 @@ const expenseService = {
 
       await connection.execute('UPDATE expenses SET status = 0 WHERE id = ?', [id]);
 
+      // Deactivate related transactions
+      await accountsService.deactivateTransactions(connection, 'EXPENSE', id);
+
       await connection.commit();
       return { success: true };
     } catch (error) {
