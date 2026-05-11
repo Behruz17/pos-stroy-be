@@ -3,8 +3,8 @@ const salesService = require('./sales.service');
 const salesController = {
   getAll: async (req, res) => {
     try {
-      const { date, month, year } = req.query;
-      const sales = await salesService.getAll({ date, month, year });
+      const { date, month, year, seller_id } = req.query;
+      const sales = await salesService.getAll({ date, month, year, seller_id });
       res.json(sales);
     } catch (error) {
       console.error('Get all sales error:', error);

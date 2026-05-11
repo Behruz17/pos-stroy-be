@@ -49,20 +49,23 @@ const userCashflowService = {
     }
 
     try {
-      // Get all income operations
+      // Get all income operations (only real payments)
       const [income] = await db.execute(`
         SELECT 
           'sale' as type,
           s.id,
-          (s.total_amount - COALESCE(s.discount, 0)) as amount,
+          (COALESCE(s.cash_amount, 0) + COALESCE(s.electronic_amount, 0)) as amount,
           s.customer_id as counterpart_id,
           c.full_name as counterpart_name,
-          'Продажа' as description,
+          CASE 
+            WHEN s.payment_status = 'PAID' THEN 'Продажа (полная оплата)'
+            WHEN s.payment_status = 'PARTIAL' THEN 'Продажа (частичная оплата)'
+          END as description,
           s.created_at,
           'income' as flow_type
         FROM sales s
         LEFT JOIN customers c ON s.customer_id = c.id
-        WHERE s.status = 1 ${dateFilterSales} ${userFilter}
+        WHERE s.status = 1 AND s.payment_status IN ('PAID', 'PARTIAL') ${dateFilterSales} ${userFilter}
         
         UNION ALL
         
@@ -151,8 +154,8 @@ const userCashflowService = {
             COALESCE(SUM(income.total_income), 0) - COALESCE(SUM(expenses.total_expenses), 0) as net_cashflow
           FROM users u
           LEFT JOIN (
-            SELECT created_by, SUM(total_amount - COALESCE(discount, 0)) as total_income
-            FROM sales WHERE status = 1 ${dateFilter}
+            SELECT created_by, SUM(COALESCE(cash_amount, 0) + COALESCE(electronic_amount, 0)) as total_income
+            FROM sales WHERE status = 1 AND payment_status IN ('PAID', 'PARTIAL') ${dateFilter}
             GROUP BY created_by
             UNION ALL
             SELECT created_by, SUM(sum) as total_income

@@ -15,9 +15,9 @@ const reportsService = {
     }
 
     const queries = {
-      totalSales: `SELECT COALESCE(SUM(total_amount), 0) as total FROM sales WHERE status = 1 ${dateFilter}`,
-      paidSales: `SELECT COALESCE(SUM(total_amount), 0) as total FROM sales WHERE status = 1 AND payment_status = 'PAID' ${dateFilter}`,
-      debtSales: `SELECT COALESCE(SUM(total_amount), 0) as total FROM sales WHERE status = 1 AND payment_status = 'DEBT' ${dateFilter}`,
+      totalSales: `SELECT COALESCE(SUM(total_amount - COALESCE(discount, 0)), 0) as total FROM sales WHERE status = 1 ${dateFilter}`,
+      paidSales: `SELECT COALESCE(SUM(total_amount - COALESCE(discount, 0)), 0) as total FROM sales WHERE status = 1 AND payment_status = 'PAID' ${dateFilter}`,
+      debtSales: `SELECT COALESCE(SUM(total_amount - COALESCE(discount, 0)), 0) as total FROM sales WHERE status = 1 AND payment_status = 'DEBT' ${dateFilter}`,
       totalExpenses: `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE status = 1 ${dateFilter}`,
       totalStockReceipts: `SELECT COALESCE(SUM(total_amount), 0) as total FROM stock_receipts WHERE status = 1 ${dateFilter}`,
       totalReturns: `SELECT COALESCE(SUM(total_amount), 0) as total FROM returns WHERE status = 1 ${dateFilter}`,
@@ -488,6 +488,7 @@ const reportsService = {
       SELECT 
         s.id,
         s.total_amount,
+        s.discount,
         s.payment_status,
         s.created_at,
         c.full_name as customer_name,
@@ -522,9 +523,10 @@ const reportsService = {
 
       // Calculate totals
       const totals = sales.reduce((acc, sale) => {
-        acc.totalAmount += parseFloat(sale.total_amount);
-        acc.paidAmount += sale.payment_status === 'PAID' ? parseFloat(sale.total_amount) : 0;
-        acc.debtAmount += sale.payment_status === 'DEBT' ? parseFloat(sale.total_amount) : 0;
+        const actualAmount = parseFloat(sale.total_amount) - parseFloat(sale.discount || 0);
+        acc.totalAmount += actualAmount;
+        acc.paidAmount += sale.payment_status === 'PAID' ? actualAmount : 0;
+        acc.debtAmount += sale.payment_status === 'DEBT' ? actualAmount : 0;
         return acc;
       }, { totalAmount: 0, paidAmount: 0, debtAmount: 0 });
 

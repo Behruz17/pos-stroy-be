@@ -13,19 +13,14 @@ const userCashflowController = {
       }
       
       // If no created_by specified:
-      // - Admin can see all users (null = no filter)
-      // - Regular users see only their own data
+      // - All users see all users (null = no filter)
+      // This provides complete overview for reporting
       if (!targetUserId) {
-        if (req.user.role === 'ADMIN') {
-          targetUserId = null; // Admin sees all users
-        } else {
-          targetUserId = req.user.id; // Regular user sees only self
-        }
+        targetUserId = null; // All users see all data
       } else {
-        // If created_by is specified, only admin can access other users' data
-        if (req.user.role !== 'ADMIN' && targetUserId !== req.user.id) {
-          return res.status(403).json({ error: 'Access denied' });
-        }
+        // If created_by is specified, allow all users to filter by any user
+        // This is read-only access for reporting purposes
+        // No access restriction needed for viewing cashflow data
       }
       
       const cashflow = await userCashflowService.getUserCashflow({ 

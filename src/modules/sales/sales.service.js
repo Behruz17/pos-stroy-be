@@ -2,14 +2,21 @@ const db = require('../../config/db');
 const accountsService = require('../accounts/accounts.service');
 
 const salesService = {
-  getAll: async ({ date, month, year } = {}) => {
+  getAll: async ({ date, month, year, seller_id } = {}) => {
     let query = `
-      SELECT s.*, c.full_name as customer_name
+      SELECT s.*, c.full_name as customer_name, u.name as seller_name
       FROM sales s
       LEFT JOIN customers c ON s.customer_id = c.id AND c.status = 1
+      LEFT JOIN users u ON s.created_by = u.id AND u.status = 1
       WHERE s.status = 1
     `;
     const params = [];
+
+    if (seller_id) {
+      // Filter by seller
+      query += ' AND s.created_by = ?';
+      params.push(seller_id);
+    }
 
     if (date) {
       // Filter by specific date (YYYY-MM-DD)
