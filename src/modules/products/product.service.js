@@ -3,12 +3,12 @@ const db = require('../../config/db');
 const productService = {
   getAll: async () => {
     const [rows] = await db.execute(`
-      SELECT p.id, p.name, p.manufacturer, p.created_at, p.image, p.notification_threshold, p.product_code, p.type, p.status,
+      SELECT p.id, p.name, p.manufacturer, p.created_at, p.image, p.notification_threshold, p.product_code, p.type, p.currency, p.status,
              COALESCE(s.quantity, 0) as stock_quantity,
              latest_sri.purchase_cost,
              latest_sri.selling_price,
              latest_sri.purchase_cost_converted,
-             sr.currency,
+             sr.currency as receipt_currency,
              sr.rate
       FROM products p
       LEFT JOIN stock s ON p.id = s.product_id
@@ -36,12 +36,12 @@ const productService = {
 
   getById: async (id) => {
     const [rows] = await db.execute(`
-      SELECT p.id, p.name, p.manufacturer, p.created_at, p.image, p.notification_threshold, p.product_code, p.type, p.status,
+      SELECT p.id, p.name, p.manufacturer, p.created_at, p.image, p.notification_threshold, p.product_code, p.type, p.currency, p.status,
              COALESCE(s.quantity, 0) as stock_quantity,
              latest_sri.purchase_cost,
              latest_sri.selling_price,
              latest_sri.purchase_cost_converted,
-             sr.currency,
+             sr.currency as receipt_currency,
              sr.rate
       FROM products p
       LEFT JOIN stock s ON p.id = s.product_id
@@ -72,7 +72,7 @@ const productService = {
     return rows[0];
   },
 
-  create: async ({ name, manufacturer, image, notification_threshold, product_code, type }) => {
+  create: async ({ name, manufacturer, image, notification_threshold, product_code, type, currency }) => {
     if (product_code) {
       const [existing] = await db.execute(
         'SELECT id FROM products WHERE product_code = ? AND status = 1',
@@ -84,21 +84,22 @@ const productService = {
     }
 
     const productType = type === 'batch' ? 'batch' : 'simple';
+    const productCurrency = currency || 'TJS';
 
     const [result] = await db.execute(
-      'INSERT INTO products (name, manufacturer, image, notification_threshold, product_code, type, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [name, manufacturer || null, image || null, notification_threshold || 10, product_code || null, productType, 1]
+      'INSERT INTO products (name, manufacturer, image, notification_threshold, product_code, type, currency, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [name, manufacturer || null, image || null, notification_threshold || 10, product_code || null, productType, productCurrency, 1]
     );
 
     const [newProduct] = await db.execute(
-      'SELECT id, name, manufacturer, created_at, image, notification_threshold, product_code, type, status FROM products WHERE id = ? AND status = 1',
+      'SELECT id, name, manufacturer, created_at, image, notification_threshold, product_code, type, currency, status FROM products WHERE id = ? AND status = 1',
       [result.insertId]
     );
 
     return newProduct[0];
   },
 
-  update: async (id, { name, manufacturer, image, notification_threshold, product_code, type }) => {
+  update: async (id, { name, manufacturer, image, notification_threshold, product_code, type, currency }) => {
     if (product_code) {
       const [existing] = await db.execute(
         'SELECT id FROM products WHERE product_code = ? AND id != ? AND status = 1',
@@ -137,6 +138,10 @@ const productService = {
       updates.push('type = ?');
       values.push(type === 'batch' ? 'batch' : 'simple');
     }
+    if (currency !== undefined) {
+      updates.push('currency = ?');
+      values.push(currency);
+    }
 
     if (updates.length === 0) {
       return { error: 'No fields to update' };
@@ -153,7 +158,7 @@ const productService = {
     }
 
     const [updatedProduct] = await db.execute(
-      'SELECT id, name, manufacturer, created_at, image, notification_threshold, product_code, type, status FROM products WHERE id = ? AND status = 1',
+      'SELECT id, name, manufacturer, created_at, image, notification_threshold, product_code, type, currency, status FROM products WHERE id = ? AND status = 1',
       [id]
     );
 
@@ -176,7 +181,7 @@ const productService = {
   getStockItems: async (id) => {
     // Check if product exists and get its type
     const [productRows] = await db.execute(
-      'SELECT id, name, type FROM products WHERE id = ? AND status = 1',
+      'SELECT id, name, type, currency FROM products WHERE id = ? AND status = 1',
       [id]
     );
 
@@ -192,6 +197,7 @@ const productService = {
         product_id: product.id,
         product_type: 'simple',
         product_name: product.name,
+        currency: product.currency,
         message: 'This is a simple product, no batches available'
       };
     }
@@ -212,6 +218,7 @@ const productService = {
       product_id: product.id,
       product_type: 'batch',
       product_name: product.name,
+      currency: product.currency,
       total_quantity: totalQuantity,
       batches: batchRows
     };

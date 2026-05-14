@@ -29,7 +29,7 @@ const productController = {
 
   create: async (req, res) => {
     try {
-      const { name, manufacturer, notification_threshold, product_code, type } = req.body;
+      const { name, manufacturer, notification_threshold, product_code, type, currency } = req.body;
       const image = req.file ? `/uploads/products/${req.file.filename}` : null;
 
       if (!name) {
@@ -42,7 +42,8 @@ const productController = {
         image,
         notification_threshold,
         product_code,
-        type
+        type,
+        currency
       });
 
       if (product.error) {
@@ -59,7 +60,7 @@ const productController = {
   update: async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, manufacturer, notification_threshold, product_code } = req.body;
+      const { name, manufacturer, notification_threshold, product_code, type, currency } = req.body;
       const image = req.file ? `/uploads/products/${req.file.filename}` : undefined;
 
       const product = await productService.update(id, {
@@ -67,7 +68,9 @@ const productController = {
         manufacturer,
         image,
         notification_threshold,
-        product_code
+        product_code,
+        type,
+        currency
       });
 
       if (product.error) {
