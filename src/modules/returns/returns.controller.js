@@ -33,10 +33,14 @@ const returnsController = {
 
   create: async (req, res) => {
     try {
-      const { customer_id, items } = req.body;
+      const { customer_id, account_id, items } = req.body;
 
       if (!customer_id) {
         return res.status(400).json({ error: 'Customer ID is required' });
+      }
+
+      if (!account_id) {
+        return res.status(400).json({ error: 'Account ID is required' });
       }
 
       if (!items || !Array.isArray(items) || items.length === 0) {
@@ -62,6 +66,7 @@ const returnsController = {
       const result = await returnsService.create({
         created_by: req.user.id,
         customer_id,
+        account_id,
         items
       });
 

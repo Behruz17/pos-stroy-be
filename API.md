@@ -2471,7 +2471,7 @@ Authorization: Bearer <token>
 
 ### POST `/returns`
 
-Создание нового возврата. Увеличивает остатки на складе и обновляет баланс клиента. Поддерживает как простые, так и партионные товары.
+Создание нового возврата. Увеличивает остатки на складе, обновляет баланс клиента и создает транзакцию возврата денег. Поддерживает как простые, так и партионные товары.
 
 **Headers:**
 ```
@@ -2482,6 +2482,7 @@ Authorization: Bearer <token>
 ```json
 {
   "customer_id": 2,
+  "account_id": 1,
   "items": [
     {
       "product_id": 5,
@@ -2502,6 +2503,7 @@ Authorization: Bearer <token>
 
 **Параметры:**
 - `customer_id` (обязательно) — ID клиента
+- `account_id` (обязательно) — ID счета для возврата денег
 - `items` (обязательно) — массив возвращаемых товаров
 - `product_id` (обязательно) — ID товара
 - `stock_item_id` (для batch товаров) — ID партии
@@ -2522,26 +2524,29 @@ Authorization: Bearer <token>
 - Создает записи в `return_items` с учетом `unit_value`
 - **Для простых товаров**: увеличивает остатки в `stock`
 - **Для партионных товаров**: увеличивает количество в конкретной партии (`stock_items`)
-- Обновляет баланс клиента (уменьшает долг)
+- **Баланс клиента**: уменьшается (мы должны клиенту деньги при возврате)
+- **Баланс счета**: уменьшается (EXPENSE транзакция - деньги уходят со счета)
 - Создает запись в `customer_operations` с типом 'RETURN'
+- Создает транзакцию в `transactions` с типом 'EXPENSE' и reference_type 'RETURN'
 
 **Расчеты:**
 - **Сумма**: `quantity * unit_price * unit_value`
 - **Реальное количество**: `quantity * unit_value`
 
 **Errors:**
-- `400` — Клиент и позиции обязательны
+- `400` — Клиент, счет и позиции обязательны
 - `400` — Каждый item должен иметь product_id, quantity > 0 и unit_price
 - `400` — Для batch товаров обязателен stock_item_id
 - `400` — unit_value должен быть положительным числом
 - `400` — Клиент не найден
+- `400` — Счет не найден
 - `400` — Партия не найдена (для batch товаров)
 
 ---
 
 ### DELETE `/returns/:id`
 
-Удаление возврата. Уменьшает остатки на складе и отменяет изменение баланса клиента.
+Удаление возврата. Уменьшает остатки на складе, отменяет изменение баланса клиента и восстанавливает баланс счета.
 
 **Headers:**
 ```
@@ -2559,7 +2564,9 @@ Authorization: Bearer <token>
 - **Для простых товаров**: уменьшает остатки в `stock`
 - **Для партионных товаров**: уменьшает количество в конкретной партии (`stock_items`)
 - Удаляет записи из `return_items`
-- Восстанавливает баланс клиента
+- **Баланс клиента**: увеличивается (отмена возврата - мы больше не должны клиенту)
+- **Баланс счета**: восстанавливается (деньги возвращаются на счет)
+- Деактивирует транзакцию возврата в `transactions`
 - Удаляет запись из `returns`
 
 **Errors:**
@@ -2970,14 +2977,16 @@ All customer operations are tracked in `customer_operations` table with differen
 ### Operation Types
 - **DEBT** - Sale in debt (increases customer balance)
 - **PAID** - Paid sale (doesn't change balance)
+- **PARTIAL** - Partial payment (increases customer balance)
 - **PAYMENT** - Payment from customer (decreases customer balance)
-- **RETURN** - Product return (decreases customer balance)
+- **RETURN** - Product return (decreases customer balance - we owe customer)
 
 ### Balance Impact
 - **DEBT**: `balance = balance + amount` (customer owes more)
 - **PAID**: `balance = balance` (no change)
+- **PARTIAL**: `balance = balance + amount` (customer owes more)
 - **PAYMENT**: `balance = balance - amount` (customer owes less)
-- **RETURN**: `balance = balance - amount` (customer owes less)
+- **RETURN**: `balance = balance - amount` (we owe customer - balance decreases)
 
 ### Usage in Different Modules
 - **Sales Module**: Creates `DEBT` or `PAID` operations

@@ -1,4 +1,5 @@
 const db = require('../../config/db');
+const accountsService = require('../accounts/accounts.service');
 
 const returnsService = {
   getAll: async ({ date, month, year } = {}) => {
@@ -57,7 +58,7 @@ const returnsService = {
     return returnRecord;
   },
 
-  create: async ({ created_by, customer_id, items }) => {
+  create: async ({ created_by, customer_id, account_id, items }) => {
     const connection = await db.getConnection();
 
     try {
@@ -65,6 +66,10 @@ const returnsService = {
 
       if (!customer_id) {
         return { error: 'Customer ID is required' };
+      }
+
+      if (!account_id) {
+        return { error: 'Account ID is required' };
       }
 
       if (!items || items.length === 0) {
@@ -80,6 +85,15 @@ const returnsService = {
         return { error: 'Customer not found' };
       }
 
+      // Check account exists
+      const [accountRows] = await connection.execute(
+        'SELECT id FROM accounts WHERE id = ? AND status = 1',
+        [account_id]
+      );
+      if (accountRows.length === 0) {
+        return { error: 'Account not found' };
+      }
+
       let totalAmount = 0;
       for (const item of items) {
         const unitValue = item.unit_value || 1.0;
@@ -87,8 +101,8 @@ const returnsService = {
       }
 
       const [returnResult] = await connection.execute(
-        'INSERT INTO returns (customer_id, total_amount, created_by, status) VALUES (?, ?, ?, ?)',
-        [customer_id, totalAmount, created_by, 1]
+        'INSERT INTO returns (customer_id, total_amount, created_by, account_id, status) VALUES (?, ?, ?, ?, ?)',
+        [customer_id, totalAmount, created_by, account_id, 1]
       );
       const returnId = returnResult.insertId;
 
@@ -156,7 +170,7 @@ const returnsService = {
         );
       }
 
-      // Update customer balance (return reduces customer debt)
+      // Update customer balance (return - we owe money to customer)
       await connection.execute(
         'UPDATE customers SET balance = balance - ? WHERE id = ? AND status = 1',
         [totalAmount, customer_id]
@@ -169,6 +183,17 @@ const returnsService = {
       );
 
       await connection.commit();
+
+      // Create expense transaction for the return (money going back to customer)
+      await accountsService.createTransaction({
+        account_id: account_id,
+        type: 'EXPENSE',
+        amount: totalAmount,
+        reference_type: 'RETURN',
+        reference_id: returnId,
+        description: 'Return of goods'
+      });
+
       return { id: returnId, total_amount: totalAmount.toString() };
     } catch (error) {
       await connection.rollback();
@@ -185,7 +210,7 @@ const returnsService = {
       await connection.beginTransaction();
 
       const [returnRows] = await connection.execute(
-        'SELECT customer_id, total_amount FROM returns WHERE id = ? AND status = 1',
+        'SELECT customer_id, total_amount, account_id FROM returns WHERE id = ? AND status = 1',
         [id]
       );
 
@@ -195,7 +220,7 @@ const returnsService = {
         return { error: 'Return not found' };
       }
 
-      const { customer_id, total_amount } = returnRows[0];
+      const { customer_id, total_amount, account_id } = returnRows[0];
 
       const [itemRows] = await connection.execute(
         'SELECT product_id, quantity, stock_item_id, unit_value FROM return_items WHERE return_id = ? AND status = 1',
@@ -228,7 +253,7 @@ const returnsService = {
         }
       }
 
-      // Restore customer balance
+      // Reverse customer balance (cancel return - we no longer owe customer)
       await connection.execute(
         'UPDATE customers SET balance = balance + ? WHERE id = ? AND status = 1',
         [total_amount, customer_id]
@@ -237,7 +262,27 @@ const returnsService = {
       await connection.execute('UPDATE return_items SET status = 0 WHERE return_id = ?', [id]);
       await connection.execute('UPDATE returns SET status = 0 WHERE id = ?', [id]);
 
+      // Get the return transaction to restore account balance
+      const [transactions] = await connection.execute(
+        'SELECT id, amount, account_id FROM transactions WHERE reference_type = ? AND reference_id = ? AND status = 1',
+        ['RETURN', id]
+      );
+
+      // Restore account balance before deactivating transaction
+      if (transactions.length > 0) {
+        for (const transaction of transactions) {
+          await connection.execute(
+            'UPDATE accounts SET balance = balance + ? WHERE id = ? AND status = 1',
+            [transaction.amount, transaction.account_id]
+          );
+        }
+      }
+
       await connection.commit();
+
+      // Deactivate the return transaction
+      await accountsService.deactivateTransactions(connection, 'RETURN', id);
+
       return { success: true };
     } catch (error) {
       await connection.rollback();
