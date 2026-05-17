@@ -61,6 +61,16 @@ GET /api/user-cashflow?created_by=176&start_date=2026-05-01
       "flow_type": "income"
     },
     {
+      "type": "debtor_returned",
+      "id": 10,
+      "amount": 300.00,
+      "counterpart_id": 5,
+      "counterpart_name": "Иванов Иван",
+      "description": "Возврат должника",
+      "created_at": "2026-05-05T02:00:00.000Z",
+      "flow_type": "income"
+    },
+    {
       "type": "return",
       "id": 45,
       "amount": 50.00,
@@ -88,13 +98,33 @@ GET /api/user-cashflow?created_by=176&start_date=2026-05-01
       "description": "Оплата поставщику",
       "created_at": "2026-05-05T10:30:00.000Z",
       "flow_type": "expense"
+    },
+    {
+      "type": "debtor_borrowed",
+      "id": 5,
+      "amount": 500.00,
+      "counterpart_id": 5,
+      "counterpart_name": "Иванов Иван",
+      "description": "Выдача должнику",
+      "created_at": "2026-05-05T09:30:00.000Z",
+      "flow_type": "expense"
+    },
+    {
+      "type": "salary_payment",
+      "id": 15,
+      "amount": 2000.00,
+      "counterpart_id": null,
+      "counterpart_name": null,
+      "description": "Выплата зарплаты",
+      "created_at": "2026-05-05T09:00:00.000Z",
+      "flow_type": "expense"
     }
   ],
   "summary": {
-    "total_income": 6665.00,
-    "total_expenses": 1075.00,
-    "net_cashflow": 5590.00,
-    "operations_count": 5
+    "total_income": 6965.00,
+    "total_expenses": 3575.00,
+    "net_cashflow": 3390.00,
+    "operations_count": 8
   },
   "users_summary": [
     {
@@ -125,9 +155,12 @@ GET /api/user-cashflow?created_by=176&start_date=2026-05-01
 #### Типы операций (type):
 - `sale` - Продажа товаров
 - `customer_payment` - Оплата клиента
+- `debtor_returned` - Возврат денег должником
 - `return` - Возврат товара
 - `expense` - Расход
 - `supplier_payment` - Оплата поставщику
+- `debtor_borrowed` - Выдача денег должнику
+- `salary_payment` - Выплата зарплаты
 
 #### Типы денежного потока (flow_type):
 - `income` - Доход (поступление денег)

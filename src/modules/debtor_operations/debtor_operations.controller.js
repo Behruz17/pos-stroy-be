@@ -40,31 +40,42 @@ const debtorOperationsController = {
 
   createBorrowed: async (req, res) => {
     try {
-      const { debtor_id, amount, description } = req.body;
-      
+      const { debtor_id, amount, description, account_id } = req.body;
+
       if (!debtor_id || !amount) {
         return res.status(400).json({ error: 'Debtor ID and amount are required' });
       }
-      
+
+      if (!account_id) {
+        return res.status(400).json({ error: 'Account ID is required' });
+      }
+
       if (parseFloat(amount) <= 0) {
         return res.status(400).json({ error: 'Amount must be positive' });
       }
-      
+
       const operationData = {
         debtor_id: parseInt(debtor_id),
         amount: parseFloat(amount),
-        description
+        description,
+        account_id: parseInt(account_id)
       };
-      
+
       const id = await debtorOperationsService.createBorrowed(operationData);
-      
+
       const newOperation = await debtorOperationsService.getById(id);
-      
+
       res.status(201).json(newOperation);
     } catch (error) {
       console.error('Error creating borrowed operation:', error);
       if (error.message === 'Debtor not found') {
         return res.status(404).json({ error: 'Debtor not found' });
+      }
+      if (error.message === 'Account not found') {
+        return res.status(404).json({ error: 'Account not found' });
+      }
+      if (error.message === 'Account ID is required') {
+        return res.status(400).json({ error: 'Account ID is required' });
       }
       res.status(500).json({ error: 'Server error' });
     }
@@ -72,31 +83,42 @@ const debtorOperationsController = {
 
   createReturned: async (req, res) => {
     try {
-      const { debtor_id, amount, description } = req.body;
-      
+      const { debtor_id, amount, description, account_id } = req.body;
+
       if (!debtor_id || !amount) {
         return res.status(400).json({ error: 'Debtor ID and amount are required' });
       }
-      
+
+      if (!account_id) {
+        return res.status(400).json({ error: 'Account ID is required' });
+      }
+
       if (parseFloat(amount) <= 0) {
         return res.status(400).json({ error: 'Amount must be positive' });
       }
-      
+
       const operationData = {
         debtor_id: parseInt(debtor_id),
         amount: parseFloat(amount),
-        description
+        description,
+        account_id: parseInt(account_id)
       };
-      
+
       const id = await debtorOperationsService.createReturned(operationData);
-      
+
       const newOperation = await debtorOperationsService.getById(id);
-      
+
       res.status(201).json(newOperation);
     } catch (error) {
       console.error('Error creating returned operation:', error);
       if (error.message === 'Debtor not found') {
         return res.status(404).json({ error: 'Debtor not found' });
+      }
+      if (error.message === 'Account not found') {
+        return res.status(404).json({ error: 'Account not found' });
+      }
+      if (error.message === 'Account ID is required') {
+        return res.status(400).json({ error: 'Account ID is required' });
       }
       if (error.message === 'Return amount cannot exceed current debt') {
         return res.status(400).json({ error: 'Return amount cannot exceed current debt' });

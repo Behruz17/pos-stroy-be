@@ -133,10 +133,28 @@ POST /debtor-operations/borrowed
 ```json
 {
   "debtor_id": 1,
+  "account_id": 1,
   "amount": 500.00,
   "description": "Новый займ"
 }
 ```
+
+**Required Fields:**
+- `debtor_id` (number) - ID должника
+- `account_id` (number) - ID счета для выдачи денег
+- `amount` (number) - Сумма займа (> 0)
+- `description` (string, optional) - Описание
+
+**Logic:**
+- Увеличивает долг должника (`debt_amount + amount`)
+- Создает EXPENSE транзакцию на указанном счете (баланс уменьшается)
+- Создает запись в `debtor_operations` с типом 'BORROWED'
+
+**Errors:**
+- `400` - Debtor ID, account ID, and amount are required
+- `400` - Amount must be positive
+- `404` - Debtor not found
+- `404` - Account not found
 
 ### Создать операцию возврата
 ```
@@ -147,10 +165,44 @@ POST /debtor-operations/returned
 ```json
 {
   "debtor_id": 1,
+  "account_id": 1,
   "amount": 200.00,
   "description": "Частичный возврат"
 }
 ```
+
+**Required Fields:**
+- `debtor_id` (number) - ID должника
+- `account_id` (number) - ID счета для получения денег
+- `amount` (number) - Сумма возврата (> 0)
+- `description` (string, optional) - Описание
+
+**Logic:**
+- Уменьшает долг должника (`debt_amount - amount`)
+- Проверяет, что сумма возврата не превышает текущий долг
+- Создает INCOME транзакцию на указанном счете (баланс увеличивается)
+- Создает запись в `debtor_operations` с типом 'RETURNED'
+
+**Errors:**
+- `400` - Debtor ID, account ID, and amount are required
+- `400` - Amount must be positive
+- `400` - Return amount cannot exceed current debt
+- `404` - Debtor not found
+- `404` - Account not found
+
+### Удалить операцию
+```
+DELETE /debtor-operations/:id
+```
+
+**Logic:**
+- Отменяет изменение долга должника
+- Восстанавливает баланс счета
+- Деактивирует связанную транзакцию
+- Soft delete операции (status = 0)
+
+**Errors:**
+- `404` - Operation not found
 
 ## Рекомендации по использованию
 
@@ -188,11 +240,48 @@ CREATE TABLE debtor_operations (
   type enum('BORROWED','RETURNED') NOT NULL,
   description text,
   date timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  account_id int DEFAULT NULL,
   status tinyint(1) NOT NULL DEFAULT '1'
 );
 ```
 
+## Migration
+
+Для добавления `account_id` в таблицу `debtor_operations` выполните миграцию:
+
+```sql
+ALTER TABLE debtor_operations ADD COLUMN account_id int DEFAULT NULL AFTER type;
+```
+
 ## Примеры использования
+
+### Создание операции займа:
+```javascript
+await fetch('/debtor-operations/borrowed', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    debtor_id: 1,
+    account_id: 1,
+    amount: 500.00,
+    description: "Новый займ"
+  })
+});
+```
+
+### Создание операции возврата:
+```javascript
+await fetch('/debtor-operations/returned', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    debtor_id: 1,
+    account_id: 1,
+    amount: 200.00,
+    description: "Частичный возврат"
+  })
+});
+```
 
 ### Создание 100+ должников с долгами:
 ```javascript

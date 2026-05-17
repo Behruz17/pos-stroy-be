@@ -35,6 +35,9 @@ GET /api/reports/general?start_date=2026-04-01&end_date=2026-04-30
     "totalExpenses": 255.00,
     "totalStockReceipts": 8998880.00,
     "totalReturns": 13.00,
+    "totalDebtorBorrowed": 500.00,
+    "totalDebtorReturned": 300.00,
+    "totalSalaryPayments": 2000.00,
     "profit": 10560.00,
     "salesCount": 4,
     "customersCount": 2,
@@ -55,6 +58,9 @@ GET /api/reports/general?start_date=2026-04-01&end_date=2026-04-30
 - `totalExpenses` - Total amount of expenses
 - `totalStockReceipts` - Total amount of stock receipts (arrivals)
 - `totalReturns` - Total amount of returns
+- `totalDebtorBorrowed` - Total amount borrowed to debtors
+- `totalDebtorReturned` - Total amount returned by debtors
+- `totalSalaryPayments` - Total amount of salary payments
 - `profit` - Calculated as paidSales - totalExpenses
 
 ---

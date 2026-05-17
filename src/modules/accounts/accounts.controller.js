@@ -47,7 +47,7 @@ const accountsController = {
         return res.status(400).json({ error: 'Invalid transaction type' });
       }
 
-      const validReferenceTypes = ['SALE', 'PURCHASE', 'SALARY', 'EXPENSE', 'CUSTOMER_PAYMENT', 'SUPPLIER_PAYMENT', 'TRANSFER', 'RETURN'];
+      const validReferenceTypes = ['SALE', 'PURCHASE', 'SALARY', 'EXPENSE', 'CUSTOMER_PAYMENT', 'SUPPLIER_PAYMENT', 'TRANSFER', 'RETURN', 'DEBTOR_BORROWED', 'DEBTOR_RETURNED'];
       if (reference_type && !validReferenceTypes.includes(reference_type)) {
         return res.status(400).json({ error: 'Invalid reference type' });
       }
