@@ -53,7 +53,7 @@ const debtorOperationsService = {
   },
 
   createBorrowed: async (operationData) => {
-    const { debtor_id, amount, description, account_id } = operationData;
+    const { debtor_id, amount, description, account_id, created_by } = operationData;
 
     if (!account_id) {
       throw new Error('Account ID is required');
@@ -74,8 +74,8 @@ const debtorOperationsService = {
 
       // Create operation record
       const [result] = await connection.execute(
-        'INSERT INTO debtor_operations (debtor_id, amount, type, description, account_id) VALUES (?, ?, ?, ?, ?)',
-        [debtor_id, amount, 'BORROWED', description || null, account_id]
+        'INSERT INTO debtor_operations (debtor_id, amount, type, description, account_id, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+        [debtor_id, amount, 'BORROWED', description || null, account_id, created_by]
       );
 
       // Update debtor debt amount
@@ -106,7 +106,7 @@ const debtorOperationsService = {
   },
 
   createReturned: async (operationData) => {
-    const { debtor_id, amount, description, account_id } = operationData;
+    const { debtor_id, amount, description, account_id, created_by } = operationData;
 
     if (!account_id) {
       throw new Error('Account ID is required');
@@ -143,8 +143,8 @@ const debtorOperationsService = {
 
       // Create operation record
       const [result] = await connection.execute(
-        'INSERT INTO debtor_operations (debtor_id, amount, type, description, account_id) VALUES (?, ?, ?, ?, ?)',
-        [debtor_id, amount, 'RETURNED', description || null, account_id]
+        'INSERT INTO debtor_operations (debtor_id, amount, type, description, account_id, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+        [debtor_id, amount, 'RETURNED', description || null, account_id, created_by]
       );
 
       // Update debtor debt amount

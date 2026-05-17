@@ -164,8 +164,8 @@ const stockReceiptService = {
         );
 
         await connection.execute(
-          'INSERT INTO supplier_operations (supplier_id, receipt_id, sum, type, status) VALUES (?, ?, ?, ?, ?)',
-          [supplier_id, receiptId, totalAmount, 'RECEIPT', 1]
+          'INSERT INTO supplier_operations (supplier_id, receipt_id, sum, type, status, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+          [supplier_id, receiptId, totalAmount, 'RECEIPT', 1, created_by]
         );
       }
 

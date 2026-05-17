@@ -38,7 +38,7 @@ const debtorsService = {
   },
 
   create: async (debtorData) => {
-    const { full_name, phone, initial_debt, description } = debtorData;
+    const { full_name, phone, initial_debt, description, created_by } = debtorData;
     
     const connection = await db.getConnection();
     await connection.beginTransaction();
@@ -55,8 +55,8 @@ const debtorsService = {
       // If initial_debt > 0, create BORROWED operation
       if (initial_debt && parseFloat(initial_debt) > 0) {
         await connection.execute(
-          'INSERT INTO debtor_operations (debtor_id, amount, type, description) VALUES (?, ?, ?, ?)',
-          [debtorId, initial_debt, 'BORROWED', 'Начальный долг при создании']
+          'INSERT INTO debtor_operations (debtor_id, amount, type, description, created_by) VALUES (?, ?, ?, ?, ?)',
+          [debtorId, initial_debt, 'BORROWED', 'Начальный долг при создании', created_by]
         );
       }
       

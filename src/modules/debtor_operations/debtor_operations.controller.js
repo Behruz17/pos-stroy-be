@@ -41,6 +41,7 @@ const debtorOperationsController = {
   createBorrowed: async (req, res) => {
     try {
       const { debtor_id, amount, description, account_id } = req.body;
+      const created_by = req.user?.id;
 
       if (!debtor_id || !amount) {
         return res.status(400).json({ error: 'Debtor ID and amount are required' });
@@ -58,7 +59,8 @@ const debtorOperationsController = {
         debtor_id: parseInt(debtor_id),
         amount: parseFloat(amount),
         description,
-        account_id: parseInt(account_id)
+        account_id: parseInt(account_id),
+        created_by
       };
 
       const id = await debtorOperationsService.createBorrowed(operationData);
@@ -84,6 +86,7 @@ const debtorOperationsController = {
   createReturned: async (req, res) => {
     try {
       const { debtor_id, amount, description, account_id } = req.body;
+      const created_by = req.user?.id;
 
       if (!debtor_id || !amount) {
         return res.status(400).json({ error: 'Debtor ID and amount are required' });
@@ -101,7 +104,8 @@ const debtorOperationsController = {
         debtor_id: parseInt(debtor_id),
         amount: parseFloat(amount),
         description,
-        account_id: parseInt(account_id)
+        account_id: parseInt(account_id),
+        created_by
       };
 
       const id = await debtorOperationsService.createReturned(operationData);

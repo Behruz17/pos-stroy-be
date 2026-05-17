@@ -39,6 +39,7 @@ const debtorsController = {
   create: async (req, res) => {
     try {
       const { full_name, phone, initial_debt, description } = req.body;
+      const created_by = req.user?.id;
       
       if (!full_name) {
         return res.status(400).json({ error: 'Full name is required' });
@@ -54,7 +55,8 @@ const debtorsController = {
         full_name,
         phone,
         initial_debt: initialDebt,
-        description
+        description,
+        created_by
       };
       
       const id = await debtorsService.create(debtorData);
