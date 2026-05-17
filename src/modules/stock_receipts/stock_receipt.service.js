@@ -144,6 +144,11 @@ const stockReceiptService = {
             ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)
           `, [item.product_id, item.quantity]);
         } else {
+          await connection.execute(
+            'UPDATE products SET purchase_cost = ? WHERE id = ? AND status = 1',
+            [actualCost, item.product_id]
+          );
+
           // For simple products: just sum the quantity
           await connection.execute(`
             INSERT INTO stock (product_id, quantity) VALUES (?, ?)

@@ -102,18 +102,32 @@ GET /api/reports/sales?start_date=2026-04-01&end_date=2026-04-30&payment_status=
     {
       "id": 5,
       "total_amount": "25.00",
+      "discount": "3.00",
       "payment_status": "PAID",
       "created_at": "2026-04-11T19:20:10.000Z",
       "customer_name": "John",
       "customer_phone": "987654321",
       "created_by_name": "Behruz",
+      "total_profit": 12.00,
       "items": [
         {
+          "id": 1,
           "quantity": 5,
           "unit_price": "5.00",
           "total_price": "25.00",
+          "stock_item_id": null,
           "product_name": "River",
-          "product_code": "1234"
+          "product_code": "1234",
+          "product_type": "simple",
+          "product_purchase_cost": "2.00",
+          "purchase_cost": "2.00",
+          "currency": "TJS",
+          "exchange_rate": 1.0,
+          "purchase_cost_original": 2.00,
+          "purchase_cost_tjs": 2.00,
+          "unit_profit": 3.00,
+          "total_profit_before_discount": 15.00,
+          "total_profit": 12.00
         }
       ]
     }
@@ -121,7 +135,8 @@ GET /api/reports/sales?start_date=2026-04-01&end_date=2026-04-30&payment_status=
   "summary": {
     "totalAmount": 10815.00,
     "paidAmount": 10815.00,
-    "debtAmount": 0.00
+    "debtAmount": 0.00,
+    "totalProfit": 6500.00
   },
   "filters": {
     "start_date": "2026-04-01",
@@ -134,6 +149,23 @@ GET /api/reports/sales?start_date=2026-04-01&end_date=2026-04-30&payment_status=
 - Returns detailed sales information with items
 - Includes customer and creator information
 - Summary shows totals by payment status
+- **Currency conversion:**
+  - Sales prices are always in TJS
+  - Purchase costs are converted to TJS using exchange rates from `exchange_rates` table
+  - `currency` - product currency (TJS, USD, RUB)
+  - `exchange_rate` - rate to TJS from exchange_rates
+  - `purchase_cost_original` - purchase cost in original currency
+  - `purchase_cost_tjs` - purchase cost converted to TJS
+- **Profit calculation:**
+  - For batch products (with `stock_item_id`): purchase cost is taken from `stock_items.purchase_cost`
+  - For simple products (without `stock_item_id`): purchase cost is taken from `products.purchase_cost`
+  - Purchase cost is converted to TJS if product currency is not TJS
+  - `unit_profit` = unit_price - purchase_cost_tjs
+  - `total_profit_before_discount` (item) = unit_profit × quantity
+  - Discount is distributed proportionally to each item based on its share of total sale price
+  - `total_profit` (item) = total_profit_before_discount - (item_price / total_items_price × discount)
+  - `total_profit` (sale) = sum of all items' total_profit
+  - `totalProfit` (summary) = sum of all sales' total_profit
 
 ---
 

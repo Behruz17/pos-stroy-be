@@ -6,12 +6,16 @@ const reportsService = {
     const { start_date, end_date } = filters;
     
     let dateFilter = '';
+    let debtorDateFilter = '';
     if (start_date && end_date) {
       dateFilter = `AND DATE(created_at) BETWEEN '${start_date}' AND '${end_date}'`;
+      debtorDateFilter = `AND DATE(date) BETWEEN '${start_date}' AND '${end_date}'`;
     } else if (start_date) {
       dateFilter = `AND DATE(created_at) >= '${start_date}'`;
+      debtorDateFilter = `AND DATE(date) >= '${start_date}'`;
     } else if (end_date) {
       dateFilter = `AND DATE(created_at) <= '${end_date}'`;
+      debtorDateFilter = `AND DATE(date) <= '${end_date}'`;
     }
 
     const queries = {
@@ -21,8 +25,8 @@ const reportsService = {
       totalExpenses: `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE status = 1 ${dateFilter}`,
       totalStockReceipts: `SELECT COALESCE(SUM(total_amount), 0) as total FROM stock_receipts WHERE status = 1 ${dateFilter}`,
       totalReturns: `SELECT COALESCE(SUM(total_amount), 0) as total FROM returns WHERE status = 1 ${dateFilter}`,
-      totalDebtorBorrowed: `SELECT COALESCE(SUM(amount), 0) as total FROM debtor_operations WHERE type = 'BORROWED' AND status = 1 ${dateFilter}`,
-      totalDebtorReturned: `SELECT COALESCE(SUM(amount), 0) as total FROM debtor_operations WHERE type = 'RETURNED' AND status = 1 ${dateFilter}`,
+      totalDebtorBorrowed: `SELECT COALESCE(SUM(amount), 0) as total FROM debtor_operations WHERE type = 'BORROWED' AND status = 1 ${debtorDateFilter}`,
+      totalDebtorReturned: `SELECT COALESCE(SUM(amount), 0) as total FROM debtor_operations WHERE type = 'RETURNED' AND status = 1 ${debtorDateFilter}`,
       totalSalaryPayments: `SELECT COALESCE(SUM(amount), 0) as total FROM salary_payments WHERE status = 1 ${dateFilter}`,
       salesCount: `SELECT COUNT(*) as count FROM sales WHERE status = 1 ${dateFilter}`,
       customersCount: `SELECT COUNT(*) as count FROM customers WHERE status = 1`,
@@ -510,19 +514,76 @@ const reportsService = {
     try {
       const [sales] = await db.execute(query);
       
+      // Get exchange rates
+      const [exchangeRates] = await db.execute(`
+        SELECT currency, rate_to_tjs 
+        FROM exchange_rates 
+        WHERE status = 1
+      `);
+      
+      const rateMap = {};
+      exchangeRates.forEach(rate => {
+        rateMap[rate.currency] = parseFloat(rate.rate_to_tjs);
+      });
+      
       // Get sales items for each sale
       for (const sale of sales) {
         const [items] = await db.execute(`
           SELECT 
+            si.id,
             si.quantity,
             si.unit_price,
             si.total_price,
+            si.stock_item_id,
             p.name as product_name,
-            p.product_code
+            p.product_code,
+            p.type as product_type,
+            p.currency as product_currency,
+            p.purchase_cost as product_purchase_cost,
+            CASE 
+              WHEN p.type = 'batch' THEN sti.purchase_cost
+              ELSE p.purchase_cost
+            END as purchase_cost
           FROM sale_items si
           LEFT JOIN products p ON si.product_id = p.id
+          LEFT JOIN stock_items sti ON si.stock_item_id = sti.id
           WHERE si.sale_id = ? AND si.status = 1
         `, [sale.id]);
+        
+        // Calculate profit for each item (before discount)
+        const itemsTotalPrice = items.reduce((sum, item) => {
+          return sum + parseFloat(item.total_price || 0);
+        }, 0);
+        
+        const discount = parseFloat(sale.discount || 0);
+        
+        for (const item of items) {
+          const unitCost = parseFloat(item.purchase_cost || 0);
+          const unitPrice = parseFloat(item.unit_price);
+          const quantity = parseFloat(item.quantity);
+          
+          // Convert purchase cost to TJS if needed
+          const currency = item.product_currency || 'TJS';
+          const rate = currency === 'TJS' ? 1.0 : (rateMap[currency] || 1.0);
+          const unitCostTJS = currency === 'TJS' ? unitCost : (unitCost * rate);
+          
+          item.currency = currency;
+          item.exchange_rate = rate;
+          item.purchase_cost_original = unitCost;
+          item.purchase_cost_tjs = unitCostTJS;
+          item.unit_profit = unitPrice - unitCostTJS;
+          item.total_profit_before_discount = item.unit_profit * quantity;
+          
+          // Distribute discount proportionally to each item
+          const itemPrice = parseFloat(item.total_price || 0);
+          const itemDiscountShare = itemsTotalPrice > 0 ? (itemPrice / itemsTotalPrice) * discount : 0;
+          item.total_profit = item.total_profit_before_discount - itemDiscountShare;
+        }
+        
+        // Calculate total profit for the sale
+        sale.total_profit = items.reduce((sum, item) => {
+          return sum + (parseFloat(item.total_profit) || 0);
+        }, 0);
         
         sale.items = items;
       }
@@ -533,8 +594,15 @@ const reportsService = {
         acc.totalAmount += actualAmount;
         acc.paidAmount += sale.payment_status === 'PAID' ? actualAmount : 0;
         acc.debtAmount += sale.payment_status === 'DEBT' ? actualAmount : 0;
+        
+        // Calculate profit from items
+        const saleProfit = sale.items.reduce((sum, item) => {
+          return sum + (parseFloat(item.total_profit) || 0);
+        }, 0);
+        acc.totalProfit += saleProfit;
+        
         return acc;
-      }, { totalAmount: 0, paidAmount: 0, debtAmount: 0 });
+      }, { totalAmount: 0, paidAmount: 0, debtAmount: 0, totalProfit: 0 });
 
       return {
         sales,
