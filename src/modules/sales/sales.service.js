@@ -312,9 +312,10 @@ const salesService = {
             [finalCustomerId, saleId, totalAmount, 'DEBT', 1, created_by]
           );
         } else if (finalPaymentStatus === 'PARTIAL') {
+          const debtAmount = totalAmount - totalPaid;
           await connection.execute(
             'UPDATE customers SET balance = balance + ? WHERE id = ? AND status = 1',
-            [totalAmount, finalCustomerId]
+            [debtAmount, finalCustomerId]
           );
 
           await connection.execute(
@@ -426,14 +427,20 @@ const salesService = {
       let oldCustomerBalanceChange = 0;
       let newCustomerBalanceChange = 0;
 
-      if (sale.customer_id && (sale.payment_status === 'DEBT' || sale.payment_status === 'PARTIAL')) {
-        oldCustomerBalanceChange = sale.total_amount;
+      if (sale.customer_id) {
+        if (sale.payment_status === 'DEBT') {
+          oldCustomerBalanceChange = sale.total_amount;
+        } else if (sale.payment_status === 'PARTIAL') {
+          oldCustomerBalanceChange = sale.total_amount - (sale.cash_amount || 0) - (sale.electronic_amount || 0);
+        }
       }
 
       if (customer_id !== undefined ? customer_id : sale.customer_id) {
         const finalPaymentStatus = payment_status !== undefined ? payment_status : sale.payment_status;
-        if (finalPaymentStatus === 'DEBT' || finalPaymentStatus === 'PARTIAL') {
+        if (finalPaymentStatus === 'DEBT') {
           newCustomerBalanceChange = newTotalAmount;
+        } else if (finalPaymentStatus === 'PARTIAL') {
+          newCustomerBalanceChange = newTotalAmount - (sale.cash_amount || 0) - (sale.electronic_amount || 0);
         }
       }
 
@@ -679,7 +686,7 @@ const salesService = {
       await connection.beginTransaction();
 
       const [saleRows] = await connection.execute(
-        'SELECT customer_id, total_amount, payment_status FROM sales WHERE id = ? AND status = 1',
+        'SELECT customer_id, total_amount, payment_status, cash_amount, electronic_amount FROM sales WHERE id = ? AND status = 1',
         [id]
       );
 
@@ -689,7 +696,7 @@ const salesService = {
         return { error: 'Sale not found' };
       }
 
-      const { customer_id, total_amount, payment_status } = saleRows[0];
+      const { customer_id, total_amount, payment_status, cash_amount, electronic_amount } = saleRows[0];
 
       const [itemRows] = await connection.execute(
         'SELECT product_id, quantity, unit_value, stock_item_id FROM sale_items WHERE sale_id = ? AND status = 1',
@@ -718,11 +725,16 @@ const salesService = {
         }
       }
 
-      if (customer_id && payment_status === 'DEBT') {
-        await connection.execute(
-          'UPDATE customers SET balance = balance - ? WHERE id = ? AND status = 1',
-          [total_amount, customer_id]
-        );
+      if (customer_id && (payment_status === 'DEBT' || payment_status === 'PARTIAL')) {
+        const balanceDecrease = payment_status === 'PARTIAL'
+          ? total_amount - (cash_amount || 0) - (electronic_amount || 0)
+          : total_amount;
+        if (balanceDecrease > 0) {
+          await connection.execute(
+            'UPDATE customers SET balance = balance - ? WHERE id = ? AND status = 1',
+            [balanceDecrease, customer_id]
+          );
+        }
       }
 
       await connection.execute('UPDATE customer_operations SET status = 0 WHERE sale_id = ?', [id]);
