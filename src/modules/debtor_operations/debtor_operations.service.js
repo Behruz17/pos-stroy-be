@@ -75,7 +75,7 @@ const debtorOperationsService = {
       // Create operation record
       const [result] = await connection.execute(
         'INSERT INTO debtor_operations (debtor_id, amount, type, description, account_id, created_by) VALUES (?, ?, ?, ?, ?, ?)',
-        [debtor_id, amount, 'BORROWED', description || null, account_id, created_by]
+        [debtor_id, amount, 'BORROWED', description || null, account_id, created_by || null]
       );
 
       // Update debtor debt amount
@@ -144,7 +144,7 @@ const debtorOperationsService = {
       // Create operation record
       const [result] = await connection.execute(
         'INSERT INTO debtor_operations (debtor_id, amount, type, description, account_id, created_by) VALUES (?, ?, ?, ?, ?, ?)',
-        [debtor_id, amount, 'RETURNED', description || null, account_id, created_by]
+        [debtor_id, amount, 'RETURNED', description || null, account_id, created_by || null]
       );
 
       // Update debtor debt amount
