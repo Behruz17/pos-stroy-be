@@ -41,7 +41,7 @@ const debtorOperationsController = {
   createBorrowed: async (req, res) => {
     try {
       const { debtor_id, amount, description, account_id } = req.body;
-      const created_by = req.user?.id;
+      const created_by = req.user?.id || null;
 
       if (!debtor_id || !amount) {
         return res.status(400).json({ error: 'Debtor ID and amount are required' });
@@ -86,7 +86,7 @@ const debtorOperationsController = {
   createReturned: async (req, res) => {
     try {
       const { debtor_id, amount, description, account_id } = req.body;
-      const created_by = req.user?.id;
+      const created_by = req.user?.id || null;
 
       if (!debtor_id || !amount) {
         return res.status(400).json({ error: 'Debtor ID and amount are required' });

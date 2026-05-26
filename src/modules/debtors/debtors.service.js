@@ -56,7 +56,7 @@ const debtorsService = {
       if (initial_debt && parseFloat(initial_debt) > 0) {
         await connection.execute(
           'INSERT INTO debtor_operations (debtor_id, amount, type, description, created_by) VALUES (?, ?, ?, ?, ?)',
-          [debtorId, initial_debt, 'BORROWED', 'Начальный долг при создании', created_by]
+          [debtorId, initial_debt, 'BORROWED', 'Начальный долг при создании', created_by || null]
         );
       }
       
